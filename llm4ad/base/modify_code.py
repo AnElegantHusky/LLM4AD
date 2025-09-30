@@ -191,6 +191,38 @@ def _protected_div(x, y, delta={delta}):
         return modified_code
 
     @classmethod
+    def add_random_seed_below_random_import(cls, program: str, seed: int = 2024) -> str:
+        """Add 'import random' statement (if needed) and insert 'random.seed(seed)' below it."""
+        program = cls.add_import_package_statement(program, 'random')
+        tree = ast.parse(program)
+
+        # find 'import random'
+        found_random_import = False
+
+        for node in tree.body:
+            if isinstance(node, ast.Import) and any(alias.name == 'random' for alias in node.names):
+                found_random_import = True
+                node_idx = tree.body.index(node)
+                seed_node = ast.Expr(
+                    value=ast.Call(
+                        func=ast.Attribute(
+                            value=ast.Name(id='random', ctx=ast.Load()),
+                            attr='seed',
+                            ctx=ast.Load()
+                        ),
+                        args=[ast.Constant(value=seed)],
+                        keywords=[]
+                    )
+                )
+                tree.body.insert(node_idx + 1, seed_node)
+
+        if not found_random_import:
+            raise ValueError("No 'import random' found in the code.")
+
+        modified_code = ast.unparse(tree)
+        return modified_code
+
+    @classmethod
     def add_numba_decorator(cls, program: str, function_name: str | List[str]) -> str:
         """
         This function aims to accelerate the evaluation of the searched code. This is achieved by decorating '@numba.jit()'
