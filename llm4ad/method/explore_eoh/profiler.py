@@ -108,7 +108,7 @@ class ExploreProfiler(ProfilerBase):
             json.dump(data, json_file, indent=4)
 
 
-class EoHTensorboardProfiler(TensorboardProfiler, ExploreProfiler):
+class ExploreTensorboardProfiler(TensorboardProfiler, ExploreProfiler):
 
     def __init__(self,
                  log_dir: str | None = None,
@@ -143,7 +143,7 @@ class EoHTensorboardProfiler(TensorboardProfiler, ExploreProfiler):
             self._writer.close()
 
 
-class EoHWandbProfiler(WandBProfiler, ExploreProfiler):
+class ExploreWandbProfiler(WandBProfiler, ExploreProfiler):
 
     def __init__(self,
                  wandb_project_name: str,

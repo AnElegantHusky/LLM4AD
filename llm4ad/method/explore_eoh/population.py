@@ -5,7 +5,7 @@ from threading import Lock
 from typing import List
 import numpy as np
 
-from base.code import Function
+from .base.code import Function
 
 
 class Population:
@@ -48,14 +48,18 @@ class Population:
         self._next_gen_pop = []
         self._generation += 1
 
+    def if_ID_duplicate(self, ID):
+        return ID in self._ID_set
+
     def register_function(self, func: Function):
         # in population initialization, we only accept valid functions
         if self._generation == 0 and func.score is None:
             return
 
         # if the ID is duplicated, discard      # Step 1.4: 用ID去重；否则添加ID
-        if func.ID in self._ID_set:
+        if self.if_ID_duplicate(func.ID):
             return
+
         # else, record the new ID
         self._ID_set.add(func.ID)
 

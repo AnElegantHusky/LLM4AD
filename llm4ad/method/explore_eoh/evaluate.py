@@ -131,10 +131,14 @@ class Evaluation(ABC):
         """
         raise NotImplementedError('Must provide a evaluator for a function.')
 
-    # note
     @abstractmethod
-    def generate_program_ID(self, callable_func: callable, **kwargs) -> str:
-        raise NotImplementedError('Must provide a evaluator for a function.')
+    def evaluate_ID(self, program_str: str, callable_func: callable, **kwargs) -> Any | None:
+        raise NotADirectoryError('Must provide a ID for each function.')
+
+    # note
+    # @abstractmethod
+    # def generate_program_ID(self, callable_func: callable, **kwargs) -> str:
+    #     raise NotImplementedError('Must provide a evaluator for a function.')
 
 
 class SecureEvaluator:
@@ -231,6 +235,56 @@ class SecureEvaluator:
                 print(e)
             return None
 
+    def evaluate_ID(self, program_str: str | Program, **kwargs):
+        try:
+            program_str = str(program)
+            function_name = TextFunctionProgramConverter.text_to_function(program_str).name
+
+            program_str = self._modify_program_code(program_str)
+            if self._debug_mode:
+                print(f'DEBUG: evaluated program ID:\n{program_str}\n')
+
+            if self._evaluator.safe_evaluate:
+                result_queue = multiprocessing.Queue()
+                process = multiprocessing.Process(
+                    target = self._evaluate_ID_in_safe_process,
+                    args=(program_str, function_name, result_queue),
+                    kwargs=kwargs,
+                    daemon=self._evaluator.daemon_eval_process
+                )
+                process.start()
+
+                if self._evaluator.timeout_seconds is not None:
+                    try:
+                        result = result_queue.get(timeout=self._evaluator.timeout_seconds)
+                        process.terminate()
+                        if process.is_alive():
+                            process.kill()
+                            process.join()
+                    except:
+                        if self._debug_mode:
+                            print(f'DEBUG: the evaluation of ID time exceeds {self._evaluator.timeout_seconds}s.')
+                        process.terminate()
+                        process.join(timeout=5)
+                        if process.is_alive():
+                            process.kill()
+                            process.join()
+                        result = None
+                else:
+                    result = result_queue.get()
+                    process.terminate()
+                    process.join(timeout=5)
+                    if process.is_alive():
+                        process.kill()
+                        process.join()
+                return result
+            else:
+                return self._evaluate_ID(program_str, function_name, **kwargs)
+        except Exception as e:
+            if self._debug_mode:
+                print(e)
+            raise None
+
     def evaluate_program_record_time(self, program: str | Program, **kwargs):
         evaluate_start = time.time()
         result = self.evaluate_program(program, **kwargs)
@@ -250,11 +304,28 @@ class SecureEvaluator:
 
             # get evaluate result
             res = self._evaluator.evaluate_program(program_str, program_callable, **kwargs)
-            ID = self._evaluator.generate_program_ID(program_callable, **kwargs)
-            result_queue.put((res, ID))
+            # ID = self._evaluator.generate_program_ID(program_callable, **kwargs)
+            result_queue.put(res)
         except Exception as e:
             if self._debug_mode:
                 print(e)
+            result_queue.put(None)
+
+    def _evaluate_ID_in_safe_process(self, program_str: str, function_name, result_queue: multiprocessing.Queue, **kwargs):
+        try:
+            if self._evaluator.exec_code:
+                all_globals_namespace = {}
+                exec(program_str, all_globals_namespace)
+                program_callable = all_globals_namespace[function_name]
+            else:
+                program_callable = None
+
+            res = self._evaluater.evaluate_ID(program_callable, **kwargs)
+            result_queue.put(ID)
+
+        except Exception as e:
+            if self._debug_mode:
+                pritn(e)
             result_queue.put(None)
 
     def _evaluate(self, program_str: str, function_name, **kwargs):
@@ -271,8 +342,23 @@ class SecureEvaluator:
 
             # get evaluate result
             res = self._evaluator.evaluate_program(program_str, program_callable, **kwargs)
-            ID = self._evaluator.generate_program_ID(program_callable, **kwargs)
-            return res, ID
+            return res
+        except Exception as e:
+            if self._debug_mode:
+                print(e)
+            return None
+
+    def evaluate_ID(self, program_str: str, function_name, **kwargs):
+        try:
+            if self._evaluator.exec_code:
+                all_globals_namespace = {}
+                exec(program_str, all_globals_namespace)
+                program_callable = all_globals_namespace[function_name]
+            else:
+                program_callable = None
+
+            res = self._evaluator.evaluate_ID(program_str, program_callable, **kwargs)
+            return res
         except Exception as e:
             if self._debug_mode:
                 print(e)

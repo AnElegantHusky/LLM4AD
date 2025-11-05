@@ -186,6 +186,17 @@ class ExploreEoH:
         program = TextFunctionProgramConverter.function_to_program(func, self._template_program)
         if program is None:
             return
+
+        # obtain and check ID   # Step 1.1 获取并检查ID
+        ID, eval_time = self._evaluation_executor.submit(
+            self._evaluator.evaluate_ID,
+            program
+        ).result()
+        func.ID = ID  # Step 1.2: 记录ID
+
+        if self._population.if_ID_duplicate(func.ID):   # Step 1.3: 先检查ID是否重复，再evaluate
+            return
+
         # evaluate
         res, eval_time = self._evaluation_executor.submit(
             self._evaluator.evaluate_program_record_time,
@@ -193,8 +204,7 @@ class ExploreEoH:
         ).result()
 
         # register to profiler
-        scores, ID = res
-        func.ID = ID            # Step 1.2: 记录ID
+        scores = res
         func.score = scores
         func.evaluate_time = eval_time
         func.algorithm = thought
