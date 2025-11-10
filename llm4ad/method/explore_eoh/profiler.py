@@ -108,6 +108,11 @@ class ExploreProfiler(ProfilerBase):
         with open(path, 'w') as json_file:
             json.dump(data, json_file, indent=4)
 
+    def record_duplicate_count(self, duplicate_count):
+        path = os.path.join(self._log_dir, 'duplicate_count.txt')
+        with open(path, 'w') as f:
+            f.write(f"duplicate_count: {duplicate_count}\n")
+
 
 class ExploreTensorboardProfiler(TensorboardProfiler, ExploreProfiler):
 

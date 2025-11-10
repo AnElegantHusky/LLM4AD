@@ -57,7 +57,7 @@ class Population:
             return
 
         # if the ID is duplicated, discard      # Step 1.4: 用ID去重；否则添加ID
-        if self.if_ID_duplicate(func.ID):
+        if self.if_ID_duplicate(func.ID):       # Note: this line should have no effect
             return
 
         # else, record the new ID

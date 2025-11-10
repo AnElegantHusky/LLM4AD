@@ -28,7 +28,7 @@ from __future__ import annotations
 import concurrent.futures
 import time
 import traceback
-from threading import Thread
+from threading import Thread, Lock
 from typing import Optional, Literal
 
 from .population import Population
@@ -42,14 +42,14 @@ from ...base import LLM
 # from ...base import (
 #     Evaluation, LLM, Function, Program, TextFunctionProgramConverter, SecureEvaluator
 # )
-from ...tools.profiler import ProfilerBase
+from .profiler import ExploreProfiler
 
 
 class ExploreEoH:
     def __init__(self,
                  llm: LLM,
                  evaluation: Evaluation,
-                 profiler: ProfilerBase = None,
+                 profiler: ExploreProfiler = None,
                  max_generations: Optional[int] = 10,
                  max_sample_nums: Optional[int] = 100,
                  pop_size: Optional[int] = 5,
@@ -118,6 +118,8 @@ class ExploreEoH:
         self._sampler = ExploreSampler(llm, self._template_program_str)
         self._evaluator = SecureEvaluator(evaluation, debug_mode=debug_mode, **kwargs)
         self._profiler = profiler
+        self._duplicate_count = 0
+        self._duplicate_lock = Lock()
 
         # statistics
         self._tot_sample_nums = 0
@@ -199,6 +201,8 @@ class ExploreEoH:
 
         if self._population.if_ID_duplicate(func.ID):   # Step 1.3: 先检查ID是否重复，再evaluate
             print_success(f'Success: Duplicate ID {func.ID} found, ')
+            with self._duplicate_lock:
+                self._duplicate_count += 1
             return
 
         # evaluate
@@ -355,6 +359,7 @@ class ExploreEoH:
             self._profiler.finish()
 
         self._sampler.llm.close()
+        self._profiler.record_duplicate_count(self._duplicate_count)
 
     def test_register_template(self):
         """A test function to register the template program to population and profiler.
