@@ -25,7 +25,8 @@ import time
 from abc import ABC, abstractmethod
 from typing import Any, Literal
 
-from ...base.code import TextFunctionProgramConverter, Program
+from .base.code import TextFunctionProgramConverter, Program
+from .base.print_utils import print_error
 from ...base.modify_code import ModifyCode
 
 
@@ -171,8 +172,8 @@ class SecureEvaluator:
                 program_str, self._evaluator.protected_div_delta, self._evaluator.use_numba_accelerate
             )
         if self._evaluator.random_seed is not None:
-            program_str = ModifyCode.add_numpy_random_seed_to_func(
-                program_str, function_name, self._evaluator.random_seed
+            program_str = ModifyCode.add_np_random_seed_below_numpy_import(
+                program_str, self._evaluator.random_seed
             )
             program_str = ModifyCode.add_random_seed_below_random_import(
                 program_str, self._evaluator.random_seed
@@ -232,10 +233,10 @@ class SecureEvaluator:
                 return self._evaluate(program_str, function_name, **kwargs)
         except Exception as e:
             if self._debug_mode:
-                print(e)
+                print_error(f'SecureEvaluator.evaluate_program: {type(e).__name__}: {e}')
             return None
 
-    def evaluate_ID(self, program_str: str | Program, **kwargs):
+    def evaluate_ID(self, program: str | Program, **kwargs):
         try:
             program_str = str(program)
             function_name = TextFunctionProgramConverter.text_to_function(program_str).name
@@ -282,7 +283,7 @@ class SecureEvaluator:
                 return self._evaluate_ID(program_str, function_name, **kwargs)
         except Exception as e:
             if self._debug_mode:
-                print(e)
+                print_error(f'SecureEvaluator.evaluate_ID: {type(e).__name__}: {e}')
             raise None
 
     def evaluate_program_record_time(self, program: str | Program, **kwargs):
@@ -308,7 +309,7 @@ class SecureEvaluator:
             result_queue.put(res)
         except Exception as e:
             if self._debug_mode:
-                print(e)
+                print_error(f'SecureEvaluator._evaluate_in_safe_process: {type(e).__name__}: {e}')
             result_queue.put(None)
 
     def _evaluate_ID_in_safe_process(self, program_str: str, function_name, result_queue: multiprocessing.Queue, **kwargs):
@@ -320,12 +321,12 @@ class SecureEvaluator:
             else:
                 program_callable = None
 
-            res = self._evaluater.evaluate_ID(program_callable, **kwargs)
+            ID = self._evaluator.evaluate_ID(program_str, program_callable, **kwargs)
             result_queue.put(ID)
 
         except Exception as e:
             if self._debug_mode:
-                pritn(e)
+                print_error(f'SecureEvaluator._evaluate_ID_in_safe_process: {type(e).__name__}: {e}')
             result_queue.put(None)
 
     def _evaluate(self, program_str: str, function_name, **kwargs):
@@ -345,10 +346,10 @@ class SecureEvaluator:
             return res
         except Exception as e:
             if self._debug_mode:
-                print(e)
+                print_error(f'SecureEvaluator._evaluate: {type(e).__name__}: {e}')
             return None
 
-    def evaluate_ID(self, program_str: str, function_name, **kwargs):
+    def _evaluate_ID(self, program_str: str, function_name, **kwargs):
         try:
             if self._evaluator.exec_code:
                 all_globals_namespace = {}
@@ -361,5 +362,5 @@ class SecureEvaluator:
             return res
         except Exception as e:
             if self._debug_mode:
-                print(e)
+                print_error(f'SecureEvaluator._evaluate_ID: {type(e).__name__}: {e}')
             return None

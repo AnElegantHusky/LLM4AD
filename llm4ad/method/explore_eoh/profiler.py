@@ -84,6 +84,7 @@ class ExploreProfiler(ProfilerBase):
             'algorithm': function.algorithm,  # Added when recording
             'function': str(function),
             'score': function.score,
+            'ID': function.ID,  # Step 1.5 保存ID
             'program': program,
         }
 

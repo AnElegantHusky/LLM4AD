@@ -25,11 +25,11 @@ from typing import Optional
 from ...base import Function
 from .profile import ProfilerBase
 
-try:
-    os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'  # Disable TF onednn for better performance
-    from torch.utils.tensorboard import SummaryWriter
-except:
-    pass
+# try:
+os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'  # Disable TF onednn for better performance
+from torch.utils.tensorboard import SummaryWriter
+# except:
+#     pass
 
 
 class TensorboardProfiler(ProfilerBase):

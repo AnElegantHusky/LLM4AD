@@ -36,6 +36,7 @@ from .profiler import ExploreProfiler
 from .prompt import ExplorePrompt
 from .sampler import ExploreSampler
 from .base.code import Function, Program, TextFunctionProgramConverter
+from .base.print_utils import print_error, print_success, print_warning
 from .evaluate import Evaluation, SecureEvaluator
 from ...base import LLM
 # from ...base import (
@@ -187,14 +188,17 @@ class ExploreEoH:
         if program is None:
             return
 
+        # program = self._evaluator._modify_program_code(program)
+
         # obtain and check ID   # Step 1.1 获取并检查ID
-        ID, eval_time = self._evaluation_executor.submit(
+        ID = self._evaluation_executor.submit(
             self._evaluator.evaluate_ID,
             program
         ).result()
         func.ID = ID  # Step 1.2: 记录ID
 
         if self._population.if_ID_duplicate(func.ID):   # Step 1.3: 先检查ID是否重复，再evaluate
+            print_success(f'Success: Duplicate ID {func.ID} found, ')
             return
 
         # evaluate
@@ -204,8 +208,7 @@ class ExploreEoH:
         ).result()
 
         # register to profiler
-        scores = res
-        func.score = scores
+        func.score = res
         func.evaluate_time = eval_time
         func.algorithm = thought
         func.sample_time = sample_time
@@ -281,8 +284,11 @@ class ExploreEoH:
         # shutdown evaluation_executor
         try:
             self._evaluation_executor.shutdown(cancel_futures=True)
-        except:
-            pass
+        except Exception as e:
+            if self._debug_mode:
+                traceback.print_exc()
+                exit()
+
 
     def _iteratively_init_population(self):
         """Let a thread repeat {sample -> evaluate -> register to population}
@@ -321,6 +327,15 @@ class ExploreEoH:
 
     def run(self):
         if not self._resume_mode:
+
+            # register the template program for testing purpose
+            try:
+                self.test_register_template()
+            except Exception:
+                if self._debug_mode:
+                    traceback.print_exc()
+                    exit()
+
             # do initialization
             self._multi_threaded_sampling(self._iteratively_init_population)
             self._population.survival()
@@ -340,3 +355,28 @@ class ExploreEoH:
             self._profiler.finish()
 
         self._sampler.llm.close()
+
+    def test_register_template(self):
+        """A test function to register the template program to population and profiler.
+        This function is only used for testing purpose.
+        """
+        func = self._function_to_evolve
+        program = self._template_program
+
+        # obtain and check ID
+        ID = self._evaluator.evaluate_ID(program)
+        func.ID = ID
+
+        # evaluate
+        scores = self._evaluator.evaluate_program(program)
+
+        # register to profiler
+        func.score = scores
+        func.algorithm = "Template Program"
+        if self._profiler is not None:
+            self._profiler.register_function(func, program=str(program))
+            if isinstance(self._profiler, ExploreProfiler):
+                self._profiler.register_population(self._population)
+
+        # register to the population
+        self._population.register_function(func)
