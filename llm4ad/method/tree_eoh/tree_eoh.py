@@ -31,7 +31,7 @@ import traceback
 from threading import Thread, Lock
 from typing import Optional, Literal
 
-from .population import Population
+from .population import TreePopulation
 from .profiler import TreeProfiler
 from .prompt import TreePrompt
 from .sampler import TreeSampler
@@ -197,10 +197,10 @@ class TreeEoH:
             self._evaluator.evaluate_ID,
             program
         ).result()
-        func.ID = ID  # Step 1.2: 记录ID
+        func._ID = ID  # Step 1.2: 记录ID
 
-        if self._population.if_ID_duplicate(func.ID):   # Step 1.3: 先检查ID是否重复，再evaluate
-            print_success(f'Success: Duplicate ID {func.ID} found, ')
+        if self._population.if_ID_duplicate(func._ID):   # Step 1.3: 先检查ID是否重复，再evaluate
+            print_success(f'Success: Duplicate ID {func._ID} found, ')
             with self._duplicate_lock:
                 self._duplicate_count += 1
             return

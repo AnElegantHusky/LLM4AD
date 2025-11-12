@@ -17,7 +17,7 @@ class Population:
         else:
             self._population = pop._population
 
-        self._ID_set = set([func.ID for func in self._population])  # Step 1.3 记录所有ID
+        self._ID_set = set([func._ID for func in self._population])  # Step 1.3 记录所有ID
 
         self._pop_size = pop_size
         self._lock = Lock()

@@ -72,12 +72,12 @@ class MCTS:
         self.q_max = max(self.q_max, node.Q)
         parent = node.parent
         while parent:
-            best_child_Q = max(child.Q for child in parent.children)
+            best_child_Q = max(child.Q for child in parent._children)
             parent.Q = parent.Q * (1 - self.discount_factor) + best_child_Q * self.discount_factor
             parent.visits += 1
-            if parent.code != 'Root' and parent.parent.code == 'Root':
+            if parent.code != 'Root' and parent._parents.code == 'Root':
                 parent.subtree.append(node)
-            parent = parent.parent
+            parent = parent._parents
 
     def uct(self, node: MCTSNode, eval_remain):
         self.exploration_constant = (self.exploration_constant_0) * eval_remain
