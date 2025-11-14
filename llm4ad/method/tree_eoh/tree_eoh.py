@@ -50,9 +50,7 @@ class TreeEoH:
                  llm: LLM,
                  evaluation: Evaluation,
                  profiler: TreeProfiler = None,
-                 max_generations: Optional[int] = 10,
                  max_sample_nums: Optional[int] = 100,
-                 pop_size: Optional[int] = 5,
                  selection_num=2,
                  use_e2_operator: bool = True,
                  use_m1_operator: bool = True,
@@ -89,9 +87,7 @@ class TreeEoH:
         """
         self._template_program_str = evaluation.template_program
         self._task_description_str = evaluation.task_description
-        self._max_generations = max_generations
         self._max_sample_nums = max_sample_nums
-        self._pop_size = pop_size
         self._selection_num = selection_num
         self._use_e2_operator = use_e2_operator
         self._use_m1_operator = use_m1_operator
@@ -110,12 +106,9 @@ class TreeEoH:
         self._function_to_evolve_name: str = self._function_to_evolve.name
         self._template_program: Program = TextFunctionProgramConverter.text_to_program(self._template_program_str)
 
-        # adjust population size
-        self._adjust_pop_size()
-
         # population, sampler, and evaluator
         self._population = Population(pop_size=self._pop_size)
-        self._sampler = ExploreSampler(llm, self._template_program_str)
+        self._sampler = TreeSampler(llm, self._template_program_str)
         self._evaluator = SecureEvaluator(evaluation, debug_mode=debug_mode, **kwargs)
         self._profiler = profiler
         self._duplicate_count = 0
@@ -145,35 +138,6 @@ class TreeEoH:
         if profiler is not None:
             self._profiler.record_parameters(llm, evaluation, self)  # ZL: necessary
 
-    def _adjust_pop_size(self):
-        # adjust population size
-        if self._max_sample_nums >= 10000:
-            if self._pop_size is None:
-                self._pop_size = 40
-            elif abs(self._pop_size - 40) > 20:
-                print(f'Warning: population size {self._pop_size} '
-                      f'is not suitable, please reset it to 40.')
-        elif self._max_sample_nums >= 1000:
-            if self._pop_size is None:
-                self._pop_size = 20
-            elif abs(self._pop_size - 20) > 10:
-                print(f'Warning: population size {self._pop_size} '
-                      f'is not suitable, please reset it to 20.')
-        elif self._max_sample_nums >= 200:
-            if self._pop_size is None:
-                self._pop_size = 10
-            elif abs(self._pop_size - 10) > 5:
-                print(f'Warning: population size {self._pop_size} '
-                      f'is not suitable, please reset it to 10.')
-        else:
-            if self._pop_size is None:
-                self._pop_size = 5
-            elif abs(self._pop_size - 5) > 5:
-                print(f'Warning: population size {self._pop_size} '
-                      f'is not suitable, please reset it to 5.')
-
-    # TODO   1.2 修改 _sample_evaluate_register
-    #            score: 可能是一个元组；ID: 需要额外记录
     def _sample_evaluate_register(self, prompt):
         """Perform following steps:
         1. Sample an algorithm using the given prompt.
@@ -192,14 +156,14 @@ class TreeEoH:
 
         # program = self._evaluator._modify_program_code(program)
 
-        # obtain and check ID   # Step 1.1 获取并检查ID
+        # obtain and check ID
         ID = self._evaluation_executor.submit(
             self._evaluator.evaluate_ID,
             program
         ).result()
-        func.ID = ID  # Step 1.2: 记录ID
+        func.ID = ID
 
-        if self._population.if_ID_duplicate(func.ID):   # Step 1.3: 先检查ID是否重复，再evaluate
+        if self._population.if_ID_duplicate(func.ID):
             print_success(f'Success: Duplicate ID {func.ID} found, ')
             with self._duplicate_lock:
                 self._duplicate_count += 1
@@ -226,15 +190,7 @@ class TreeEoH:
         self._population.register_function(func)
 
     def _continue_loop(self) -> bool:
-        if self._max_generations is None and self._max_sample_nums is None:
-            return True
-        elif self._max_generations is not None and self._max_sample_nums is None:
-            return self._population.generation < self._max_generations
-        elif self._max_generations is None and self._max_sample_nums is not None:
-            return self._tot_sample_nums < self._max_sample_nums
-        else:
-            return (self._population.generation < self._max_generations
-                    and self._tot_sample_nums < self._max_sample_nums)
+        return self._tot_sample_nums < self._max_sample_nums
 
     def _iteratively_use_eoh_operator(self):
         while self._continue_loop():
@@ -301,7 +257,7 @@ class TreeEoH:
         while self._population.generation == 0:
             try:
                 # get a new func using i1
-                prompt = ExplorePrompt.get_prompt_i1(self._task_description_str, self._function_to_evolve)
+                prompt = TreePrompt.get_prompt_i1(self._task_description_str, self._function_to_evolve)
                 self._sample_evaluate_register(prompt)
                 if self._tot_sample_nums >= self._initial_sample_nums_max:
                     # print(f'Warning: Initialization not accomplished in {self._initial_sample_nums_max} samples !!!')
