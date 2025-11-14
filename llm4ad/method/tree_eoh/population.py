@@ -12,6 +12,10 @@ import overrides
 
 from .base.code import Function
 from .base.print_utils import print_error
+import queue
+import heapq
+import itertools
+import threading
 
 
 class Population:
@@ -63,7 +67,7 @@ class Population:
             return
 
         # if the ID is duplicated, discard      # Step 1.4: 用ID去重；否则添加ID
-        if self.if_ID_duplicate(func.ID):       # Note: this line should have no effect
+        if self.if_ID_duplicate(func.ID):  # Note: this line should have no effect
             return
 
         # else, record the new ID
@@ -105,18 +109,19 @@ class Population:
         return np.random.choice(func, p=p)
 
 
-class TreePopulation():
-    pass
-
 class TreeNode():
-    def __init__(self, sample_order, func, parents: List[TreeNode] | None = None):
+    def __init__(self, sample_order, func):
         self._ID = func.ID
         self._sample_order = sample_order
         self._func = func
 
-        self._parents = parents
+        self._prompt_type = func.prompt_type
+        self._parents = func.parents
         self._children = []
-        self._level = sum([p.level for p in parents]) // len(parents)     # TODO: if there are multiple parents, what's the level?
+        self._level = sum([p.level for p in self._parents]) // len(
+            self._parents)  # TODO: if there are multiple parents, what's the level?
+
+        self._search_history = defaultdict(int)
 
     def is_leaf(self):
         return len(self._children) == 0
@@ -128,6 +133,42 @@ class TreeNode():
         return f"TreeNode(ID={self._ID}, level={self._level}, children={len(self._children)})"
 
 
+class SelectionPriorityQueue:
+    def __init__(self, priority_func):
+        self._heap = []
+        self._counter = itertools.count()
+        self.priority_func = priority_func
+        self._lock = threading.Lock()
+
+    def push(self, item):
+        with self._lock:
+            priority = self.priority_func(item)
+            count = next(self._counter)
+            heapq.heappush(self._heap, (priority, count, item))
+
+    def pop(self):
+        if not self._heap:
+            raise IndexError("pop from an empty priority queue")
+
+        with self._lock:
+            priority, count, item = heapq.heappop(self._heap)
+        return item
+
+    def peek(self):
+        if not self._heap:
+            raise None
+
+        with self._lock:
+            priority, count, item = self._heap[0]
+        return item
+
+    def __len__(self):
+        return len(self._heap)
+
+    def is_empty(self):
+        return len(self._heap) == 0
+
+
 class TreePopulation(Population):
     """
     算子树管理器。
@@ -137,8 +178,8 @@ class TreePopulation(Population):
     以确保所有索引始终保持同步。
     """
 
-    def __init__(self, pop_size, generation=0):
-        super().__init__(pop_size, generation)
+    def __init__(self):
+        super().__init__(0, 0)
 
         self._roots = []
 
@@ -156,6 +197,15 @@ class TreePopulation(Population):
 
         self._sample_order = 0
 
+        # Queues for different prompt selection
+        # Tabu for prompt enginering
+        self._E1_queue = SelectionPriorityQueue(self.E1_priority)
+        self._E2_queue = SelectionPriorityQueue(self.E2_priority)
+        self._M1_queue = SelectionPriorityQueue(self.M1_priority)
+        self._M2_queue = SelectionPriorityQueue(self.M2_priority)
+        self._tabu_set = set()
+
+
     def __len__(self):
         return len(self._nodes_by_index)
 
@@ -164,16 +214,12 @@ class TreePopulation(Population):
 
     @property
     def population(self):
-        return list(self._nodes_by_index.values())
-
-    # note: Population.survival is deprecated in TreePopulation
+        return [node._func for node in self._nodes_by_index.values()]
 
     def if_ID_duplicate(self, ID):
         return ID in self._nodes_by_id
 
-    # TODO: what's parent's type?
-    @overrides.override
-    def register_function(self, parent_id_list: List[int], func: Function):
+    def register_function(self, func: Function):
         # Note: unlike EoH, we only accept valid functions
         if func.score is None:
             return
@@ -183,16 +229,14 @@ class TreePopulation(Population):
             return
 
         try:
-            parents = [self.get_node_by_index(idx) for idx in parent_id_list]
             with self._lock:
-                self.add_node(parents, func)
+                self.add_node(func)
         except Exception as e:
             return
         finally:
             self._lock.release()
 
-
-    def add_node(self, parents: List[TreeNode] | None, func: Function) -> TreeNode:
+    def add_node(self, func: Function) -> TreeNode:
         """
         向树中添加一个新节点。
         这是唯一应该用于添加节点的方法，以确保索引一致。
@@ -200,19 +244,15 @@ class TreePopulation(Population):
         sample_order = self._sample_order
         self._sample_order += 1
 
-        if parents in [None, []]:
-            new_node = TreeNode(
-                sample_order=sample_order,
-                func=func,
-                parents=None
-            )
+        parents = [self.get_node_by_id(pid) for pid in func.parents]
+        new_node = TreeNode(
+            sample_order=sample_order,
+            func=func,
+        )
+
+        if parents in [None, [], [None]]:
             self._roots.append(new_node)
         else:
-            new_node = TreeNode(
-                sample_order=sample_order,
-                func=func,
-                parents=parents
-            )
             for parent in parents:
                 parent._children.append(new_node)
                 if parent in self._leaf_nodes:
@@ -242,11 +282,11 @@ class TreePopulation(Population):
 
     def get_node_by_id(self, operator_id):
         """根据 算子ID 获取节点"""
-        return self._nodes_by_id.get(operator_id)
+        return self._nodes_by_id.get(operator_id, None)
 
     def get_node_by_index(self, index):
         """根据 算子Index 获取节点"""
-        return self._nodes_by_index.get(index)
+        return self._nodes_by_index.get(index, None)
 
     def get_nodes_by_level(self, level):
         """获取某一层的所有节点"""
@@ -258,3 +298,27 @@ class TreePopulation(Population):
         # 返回集合的副本
         return set(self._leaf_nodes)
 
+    def survival(self):
+        raise NotImplementedError("To be implemented.")
+
+    def E1_priority(self, node: TreeNode) -> int:
+        raise NotImplementedError("To be implemented.")
+
+    def E2_priority(self, node: TreeNode) -> int:
+        raise NotImplementedError("To be implemented.")
+
+    def M1_priority(self, node: TreeNode) -> int:
+        raise NotImplementedError("To be implemented.")
+
+    def M2_priority(self, node: TreeNode) -> int:
+        raise NotImplementedError("To be implemented.")
+
+    @overrides.override()
+    def selection(self, prompt_type) -> Function:
+        raise NotImplementedError("To be implemented.")
+
+    def feedback(self, parents: List[str], prompt_type: str):
+        with self._lock:
+            for parent_id in parents:
+                parent_node = self._nodes_by_id[parent_id]
+                parent_node._search_history[prompt_type] += 1

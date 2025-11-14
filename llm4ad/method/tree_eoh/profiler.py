@@ -11,7 +11,7 @@ try:
 except:
     pass
 
-from .population import Population
+from .population import TreePopulation
 from .base.code import Function
 from ...tools.profiler import TensorboardProfiler, ProfilerBase, WandBProfiler
 
@@ -36,35 +36,30 @@ class TreeProfiler(ProfilerBase):
                          log_style=log_style,
                          create_random_path=create_random_path,
                          **kwargs)
-        self._cur_gen = 0
         self._pop_lock = Lock()
         if self._log_dir:
             self._ckpt_dir = os.path.join(self._log_dir, 'population')
             os.makedirs(self._ckpt_dir, exist_ok=True)
 
-    def register_population(self, pop: Population):
-        try:
-            self._pop_lock.acquire()
-            if (self._num_samples == 0 or
-                    pop.generation == self._cur_gen):
-                return
-            funcs = pop.population  # type: List[Function]
-            funcs_json = []  # type: List[Dict]
-            for f in funcs:
-                f_json = {
-                    'algorithm': f.algorithm,
-                    'function': str(f),
-                    'score': f.score,
-                    'ID': f.ID      # Step 1.5 保存ID
-                }
-                funcs_json.append(f_json)
-            path = os.path.join(self._ckpt_dir, f'pop_{pop.generation}.json')
-            with open(path, 'w') as json_file:
-                json.dump(funcs_json, json_file, indent=4)
-            self._cur_gen += 1
-        finally:
-            if self._pop_lock.locked():
-                self._pop_lock.release()
+    def register_function(self, function: Function, program: str = '', *, resume_mode=False):
+        """Record an obtained function.
+        """
+        if self._num_objs < 2:
+            try:
+                with self._register_function_lock:
+                    self._num_samples += 1
+                    self._record_and_print_verbose(function, resume_mode=resume_mode)
+                    self._write_json(function, program)
+            finally:
+                self._register_function_lock.release()
+        else:
+            try:
+                with self._register_function_lock:
+                    self._num_samples += 1
+                    self._record_and_print_verbose(function, resume_mode=resume_mode)
+                    self._write_json(function, program)
+            finally:
+                self._register_function_lock.release()
 
     def _write_json(self, function: Function, program='', *, record_type='history', record_sep=200):
         """Write function data to a JSON file.
@@ -81,10 +76,12 @@ class TreeProfiler(ProfilerBase):
         sample_order = self._num_samples
         content = {
             'sample_order': sample_order,
-            'algorithm': function.algorithm,  # Added when recording
+            'thought': function.thought,  # Added when recording
             'function': str(function),
             'score': function.score,
             'ID': function.ID,  # Step 1.5 保存ID
+            'parents': function.parents,
+            'prompt_type': function.prompt_type,
             'program': program,
         }
 

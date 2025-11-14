@@ -59,7 +59,7 @@ from .print_utils import print_error
 class Function:
     """A parsed Python function."""
 
-    algorithm = ''
+    thought = ''
     name: str
     args: str
     body: str
@@ -69,6 +69,8 @@ class Function:
     ID: str | None = None
     evaluate_time: float | None = None
     sample_time: float | None = None
+    parents: list[str] | None = None
+    prompt_type: str | None = None
     # sample_order: int | None = None
 
     def __str__(self) -> str:

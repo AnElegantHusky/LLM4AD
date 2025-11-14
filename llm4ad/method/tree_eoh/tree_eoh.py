@@ -39,10 +39,10 @@ from .base.code import Function, Program, TextFunctionProgramConverter
 from .base.print_utils import print_error, print_success, print_warning
 from .evaluate import Evaluation, SecureEvaluator
 from ...base import LLM
+
 # from ...base import (
 #     Evaluation, LLM, Function, Program, TextFunctionProgramConverter, SecureEvaluator
 # )
-from .profiler import TreeProfiler
 
 
 class TreeEoH:
@@ -107,21 +107,19 @@ class TreeEoH:
         self._template_program: Program = TextFunctionProgramConverter.text_to_program(self._template_program_str)
 
         # population, sampler, and evaluator
-        self._population = Population(pop_size=self._pop_size)
+        self._population = TreePopulation()
         self._sampler = TreeSampler(llm, self._template_program_str)
         self._evaluator = SecureEvaluator(evaluation, debug_mode=debug_mode, **kwargs)
         self._profiler = profiler
         self._duplicate_count = 0
+        self._infeasible_count = 0
         self._duplicate_lock = Lock()
 
         # statistics
         self._tot_sample_nums = 0
 
         # reset _initial_sample_nums_max
-        self._initial_sample_nums_max = min(
-            self._max_sample_nums,
-            2 * self._pop_size
-        )
+        self._initial_sample_nums_max = self._max_sample_nums
 
         # multi-thread executor for evaluation
         assert multi_thread_or_process_eval in ['thread', 'process']
@@ -138,7 +136,7 @@ class TreeEoH:
         if profiler is not None:
             self._profiler.record_parameters(llm, evaluation, self)  # ZL: necessary
 
-    def _sample_evaluate_register(self, prompt):
+    def _sample_evaluate_register(self, prompt, parents: list[str] | None, prompt_type: str):
         """Perform following steps:
         1. Sample an algorithm using the given prompt.
         2. Evaluate it by submitting to the process/thread pool, and get the results.
@@ -146,6 +144,9 @@ class TreeEoH:
         """
         sample_start = time.time()
         thought, func = self._sampler.get_thought_and_function(prompt)
+        func.parents = parents
+        func.prompt_type = prompt_type
+
         sample_time = time.time() - sample_start
         if thought is None or func is None:
             return
@@ -166,7 +167,11 @@ class TreeEoH:
         if self._population.if_ID_duplicate(func.ID):
             print_success(f'Success: Duplicate ID {func.ID} found, ')
             with self._duplicate_lock:
-                self._duplicate_count += 1
+                if func.ID is None:         # TODO: check if this is correct
+                    self._infeasible_count += 1
+                else:
+                    self._duplicate_count += 1
+                    self._population.feedback(parents, prompt_type)
             return
 
         # evaluate
@@ -178,12 +183,10 @@ class TreeEoH:
         # register to profiler
         func.score = res
         func.evaluate_time = eval_time
-        func.algorithm = thought
+        func.thought = thought
         func.sample_time = sample_time
         if self._profiler is not None:
             self._profiler.register_function(func, program=str(program))
-            if isinstance(self._profiler, TreeProfiler):
-                self._profiler.register_population(self._population)
             self._tot_sample_nums += 1
 
         # register to the population
@@ -197,40 +200,41 @@ class TreeEoH:
             try:
                 # get a new func using e1
                 indivs = [self._population.selection() for _ in range(self._selection_num)]
-                prompt = ExplorePrompt.get_prompt_e1(self._task_description_str, indivs, self._function_to_evolve)
+                parents = [indi.ID for indi in indivs]
+                prompt = TreePrompt.get_prompt_e1(self._task_description_str, indivs, self._function_to_evolve)
                 if self._debug_mode:
                     print(f'E1 Prompt: {prompt}')
-                self._sample_evaluate_register(prompt)
+                self._sample_evaluate_register(prompt, parents, 'E1')
                 if not self._continue_loop():
                     break
 
                 # get a new func using e2
                 if self._use_e2_operator:
                     indivs = [self._population.selection() for _ in range(self._selection_num)]
-                    prompt = ExplorePrompt.get_prompt_e2(self._task_description_str, indivs, self._function_to_evolve)
+                    prompt = TreePrompt.get_prompt_e2(self._task_description_str, indivs, self._function_to_evolve)
                     if self._debug_mode:
                         print(f'E2 Prompt: {prompt}')
-                    self._sample_evaluate_register(prompt)
+                    self._sample_evaluate_register(prompt, parents, 'E2')
                     if not self._continue_loop():
                         break
 
                 # get a new func using m1
                 if self._use_m1_operator:
                     indiv = self._population.selection()
-                    prompt = ExplorePrompt.get_prompt_m1(self._task_description_str, indiv, self._function_to_evolve)
+                    prompt = TreePrompt.get_prompt_m1(self._task_description_str, indiv, self._function_to_evolve)
                     if self._debug_mode:
                         print(f'M1 Prompt: {prompt}')
-                    self._sample_evaluate_register(prompt)
+                    self._sample_evaluate_register(prompt, [indiv.ID], 'M1')
                     if not self._continue_loop():
                         break
 
                 # get a new func using m2
                 if self._use_m2_operator:
                     indiv = self._population.selection()
-                    prompt = ExplorePrompt.get_prompt_m2(self._task_description_str, indiv, self._function_to_evolve)
+                    prompt = TreePrompt.get_prompt_m2(self._task_description_str, indiv, self._function_to_evolve)
                     if self._debug_mode:
                         print(f'M2 Prompt: {prompt}')
-                    self._sample_evaluate_register(prompt)
+                    self._sample_evaluate_register(prompt, [indiv.ID], 'M2')
                     if not self._continue_loop():
                         break
             except KeyboardInterrupt:
@@ -258,7 +262,7 @@ class TreeEoH:
             try:
                 # get a new func using i1
                 prompt = TreePrompt.get_prompt_i1(self._task_description_str, self._function_to_evolve)
-                self._sample_evaluate_register(prompt)
+                self._sample_evaluate_register(prompt, None, 'I1')
                 if self._tot_sample_nums >= self._initial_sample_nums_max:
                     # print(f'Warning: Initialization not accomplished in {self._initial_sample_nums_max} samples !!!')
                     print(
@@ -336,8 +340,6 @@ class TreeEoH:
         func.algorithm = "Template Program"
         if self._profiler is not None:
             self._profiler.register_function(func, program=str(program))
-            if isinstance(self._profiler, TreeProfiler):
-                self._profiler.register_population(self._population)
 
         # register to the population
         self._population.register_function(func)
