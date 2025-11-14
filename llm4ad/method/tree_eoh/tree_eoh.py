@@ -31,7 +31,7 @@ import traceback
 from threading import Thread, Lock
 from typing import Optional, Literal
 
-from .population import Population
+from .population import TreePopulation
 from .profiler import TreeProfiler
 from .prompt import TreePrompt
 from .sampler import TreeSampler

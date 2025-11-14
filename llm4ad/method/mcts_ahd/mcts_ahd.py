@@ -264,7 +264,7 @@ class MCTS_AHD:
         elif option == 'e1':
             indivs = [copy.deepcopy(children.subtree[random.choices(range(len(children.subtree)), k=1)[0]].individual)
                       for
-                      children in mcts.root.children]
+                      children in mcts.root._children]
             prompt = MAPrompt.get_prompt_e1(self._task_description_str, indivs, self._function_to_evolve)
             func = self._sample_evaluate_register(prompt, func_only=True)
             if func is False:
@@ -440,21 +440,21 @@ class MCTS_AHD:
             node_set = []
             print(f"Current performances of MCTS nodes: {mcts.rank_list}")
             print(
-                f"Current number of MCTS nodes in the subtree of each child of the root: {[len(node.subtree) for node in mcts.root.children]}")
+                f"Current number of MCTS nodes in the subtree of each child of the root: {[len(node.subtree) for node in mcts.root._children]}")
             cur_node = mcts.root
-            while len(cur_node.children) > 0 and cur_node.depth < mcts.max_depth:
+            while len(cur_node._children) > 0 and cur_node.depth < mcts.max_depth:
                 uct_scores = [mcts.uct(node, max(1 - self._tot_sample_nums / self._max_sample_nums, 0)) for node in
-                              cur_node.children]
+                              cur_node._children]
                 selected_pair_idx = uct_scores.index(max(uct_scores))
-                if int((cur_node.visits) ** mcts.alpha) > len(cur_node.children):
+                if int((cur_node.visits) ** mcts.alpha) > len(cur_node._children):
                     if cur_node == mcts.root:
                         op = 'e1'
-                        self.expand(mcts, mcts.root.children, cur_node, op)
+                        self.expand(mcts, mcts.root._children, cur_node, op)
                     else:
                         # i = random.randint(1, n_op - 1)
                         op = 'e2'
-                        self.expand(mcts, cur_node.children, cur_node, op)
-                cur_node = cur_node.children[selected_pair_idx]
+                        self.expand(mcts, cur_node._children, cur_node, op)
+                cur_node = cur_node._children[selected_pair_idx]
             for i in range(len(n_op)):
                 op = n_op[i]
                 print(f"Iter: {self._tot_sample_nums}/{self._max_sample_nums} OP: {op}", end="|")
