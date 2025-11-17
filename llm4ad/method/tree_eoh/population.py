@@ -17,111 +17,25 @@ import heapq
 import itertools
 import threading
 
-
-class Population:
-    def __init__(self, pop_size, generation=0, pop: List[Function] | Population | None = None):
-        if pop is None:
-            self._population = []
-        elif isinstance(pop, list):
-            self._population = pop
-        else:
-            self._population = pop._population
-
-        self._ID_set = set([func._ID for func in self._population])  # Step 1.3 记录所有ID
-
-        self._pop_size = pop_size
-        self._lock = Lock()
-        self._next_gen_pop = []
-        self._generation = generation
-
-    def __len__(self):
-        return len(self._population)
-
-    def __getitem__(self, item) -> Function:
-        return self._population[item]
-
-    def __setitem__(self, key, value):
-        self._population[key] = value
-
-    @property
-    def population(self):
-        return self._population
-
-    @property
-    def generation(self):
-        return self._generation
-
-    def survival(self):
-        pop = self._population + self._next_gen_pop
-        pop = sorted(pop, key=lambda f: f.score, reverse=True)
-        self._population = pop[:self._pop_size]
-        self._next_gen_pop = []
-        self._generation += 1
-
-    def if_ID_duplicate(self, ID):
-        return ID in self._ID_set
-
-    def register_function(self, func: Function):
-        # in population initialization, we only accept valid functions
-        if self._generation == 0 and func.score is None:
-            return
-
-        # if the ID is duplicated, discard      # Step 1.4: 用ID去重；否则添加ID
-        if self.if_ID_duplicate(func.ID):  # Note: this line should have no effect
-            return
-
-        # else, record the new ID
-        self._ID_set.add(func.ID)
-
-        # if the score is None, we still put it into the population,
-        # we set the score to '-inf'
-        if func.score is None:
-            func.score = float('-inf')
-        try:
-            self._lock.acquire()
-            if self.has_duplicate_function(func):
-                func.score = float('-inf')
-            # register to next_gen
-            self._next_gen_pop.append(func)
-            # update: perform survival if reach the pop size
-            if len(self._next_gen_pop) >= self._pop_size:
-                self.survival()
-        except Exception as e:
-            return
-        finally:
-            self._lock.release()
-
-    def has_duplicate_function(self, func: str | Function) -> bool:
-        for f in self._population:
-            if str(f) == str(func) or func.score == f.score:
-                return True
-        for f in self._next_gen_pop:
-            if str(f) == str(func) or func.score == f.score:
-                return True
-        return False
-
-    def selection(self) -> Function:
-        funcs = [f for f in self._population if not math.isinf(f.score)]
-        func = sorted(funcs, key=lambda f: f.score, reverse=True)
-        p = [1 / (r + len(func)) for r in range(len(func))]
-        p = np.array(p)
-        p = p / np.sum(p)
-        return np.random.choice(func, p=p)
-
-
 class TreeNode():
-    def __init__(self, sample_order, func):
+    def __init__(self, sample_order, func, level):
         self._ID = func.ID
         self._sample_order = sample_order
-        self._func = func
+        self._func: Function = func
 
         self._prompt_type = func.prompt_type
         self._parents = func.parents
         self._children = []
-        self._level = sum([p.level for p in self._parents]) // len(
-            self._parents)  # TODO: if there are multiple parents, what's the level?
 
-        self._search_history = defaultdict(int)
+        self._level = level
+
+        # if self._parents in [None, [], [None]]:
+        #     self._level = 0
+        # else:
+        #     self._level = sum([p.level for p in self._parents]) // len(
+        #         self._parents)  # TODO: if there are multiple parents, what's the level?
+
+        # self._search_history = defaultdict(int)
 
     def is_leaf(self):
         return len(self._children) == 0
@@ -133,43 +47,7 @@ class TreeNode():
         return f"TreeNode(ID={self._ID}, level={self._level}, children={len(self._children)})"
 
 
-class SelectionPriorityQueue:
-    def __init__(self, priority_func):
-        self._heap = []
-        self._counter = itertools.count()
-        self.priority_func = priority_func
-        self._lock = threading.Lock()
-
-    def push(self, item):
-        with self._lock:
-            priority = self.priority_func(item)
-            count = next(self._counter)
-            heapq.heappush(self._heap, (priority, count, item))
-
-    def pop(self):
-        if not self._heap:
-            raise IndexError("pop from an empty priority queue")
-
-        with self._lock:
-            priority, count, item = heapq.heappop(self._heap)
-        return item
-
-    def peek(self):
-        if not self._heap:
-            raise None
-
-        with self._lock:
-            priority, count, item = self._heap[0]
-        return item
-
-    def __len__(self):
-        return len(self._heap)
-
-    def is_empty(self):
-        return len(self._heap) == 0
-
-
-class TreePopulation(Population):
+class TreePopulation:
     """
     算子树管理器。
 
@@ -179,32 +57,30 @@ class TreePopulation(Population):
     """
 
     def __init__(self):
-        super().__init__(0, 0)
-
+        self._ID_set = {None}
+        self._lock = Lock()
         self._roots = []
 
         # 1. 根据 算子ID 访问
-        self._nodes_by_id = {}
+        self._nodes_by_id: dict[str, TreeNode] = {}
 
         # 2. 根据 算子Index 访问
-        self._nodes_by_index = {}
+        self._nodes_by_index: dict[int, TreeNode] = {}
 
         # 3. 根据 树的层次 访问
         self._nodes_by_level = defaultdict(list)
 
         # 4. 访问 所有叶子节点
-        self._leaf_nodes = set()
+        self._leaf_nodes: set[TreeNode] = set()
 
         self._sample_order = 0
 
-        # Queues for different prompt selection
-        # Tabu for prompt enginering
-        self._E1_queue = SelectionPriorityQueue(self.E1_priority)
-        self._E2_queue = SelectionPriorityQueue(self.E2_priority)
-        self._M1_queue = SelectionPriorityQueue(self.M1_priority)
-        self._M2_queue = SelectionPriorityQueue(self.M2_priority)
-        self._tabu_set = set()
-
+        self._tabu_dict = {
+            'E1': {},
+            'E2': {},
+            'M1': {},
+            'M2': {}
+        }
 
     def __len__(self):
         return len(self._nodes_by_index)
@@ -232,9 +108,11 @@ class TreePopulation(Population):
             with self._lock:
                 self.add_node(func)
         except Exception as e:
+            print_error(f'TreePopulation.register_function: {type(e).__name__}: {e}')
             return
         finally:
-            self._lock.release()
+            if self._lock.locked():
+                self._lock.release()
 
     def add_node(self, func: Function) -> TreeNode:
         """
@@ -244,10 +122,18 @@ class TreePopulation(Population):
         sample_order = self._sample_order
         self._sample_order += 1
 
-        parents = [self.get_node_by_id(pid) for pid in func.parents]
+        if func.parents in [None, [], [None]]:
+            parents = None
+            level = 0
+        else:
+            parents = [self.get_node_by_id(pid) for pid in func.parents]
+            level = sum([p._level for p in parents]) // len(parents)
+
+
         new_node = TreeNode(
             sample_order=sample_order,
             func=func,
+            level=level
         )
 
         if parents in [None, [], [None]]:
@@ -259,7 +145,6 @@ class TreePopulation(Population):
                     self._leaf_nodes.remove(parent)
 
         ID = func.ID
-        level = new_node._level
 
         # --- 4. 维护所有索引 (关键步骤!) ---
 
@@ -298,27 +183,71 @@ class TreePopulation(Population):
         # 返回集合的副本
         return set(self._leaf_nodes)
 
-    def survival(self):
-        raise NotImplementedError("To be implemented.")
+    def select(self, n, prompt_type) -> Function | list[Function]:
+        with self._lock:
+            # step 1: if there are leaf nodes not in tabu, select the ones with minimum level
+            tabu_dict = self._tabu_dict[prompt_type]
+            leaf_list = [node for node in self._leaf_nodes if node._ID not in tabu_dict]
 
-    def E1_priority(self, node: TreeNode) -> int:
-        raise NotImplementedError("To be implemented.")
+            if len(leaf_list) >= n:
+                min_level_nodes = sorted(leaf_list, key=lambda x: x._level)[:n]
+                return [x._func for x in min_level_nodes]
 
-    def E2_priority(self, node: TreeNode) -> int:
-        raise NotImplementedError("To be implemented.")
+            # step 2: if there are non-leaf nodes not in tabu, select from all nodes not in tabu
+            node_list = [node for node in self._nodes_by_index.values() if node._ID not in tabu_dict]
+            if len(node_list) >= n:
+                min_nodes = sorted(node_list, key=lambda x: x._level)[:n]
+                return [x._func for x in min_nodes]
 
-    def M1_priority(self, node: TreeNode) -> int:
-        raise NotImplementedError("To be implemented.")
-
-    def M2_priority(self, node: TreeNode) -> int:
-        raise NotImplementedError("To be implemented.")
-
-    @overrides.override()
-    def selection(self, prompt_type) -> Function:
-        raise NotImplementedError("To be implemented.")
+            # step 3: otherwise, select the best available node
+            else:
+                func = sorted(node_list, key=lambda x: x._func.score, reverse=True)
+                p = [1 / (r + len(func)) for r in range(len(func))]
+                p = np.array(p)
+                p = p / np.sum(p)
+                return np.random.choice(func, p=p)
 
     def feedback(self, parents: List[str], prompt_type: str):
+        if parents in [None, [], [None]]:
+            return
+
         with self._lock:
             for parent_id in parents:
                 parent_node = self._nodes_by_id[parent_id]
-                parent_node._search_history[prompt_type] += 1
+                if parent_node._ID not in self._tabu_dict[prompt_type]:
+                    self._tabu_dict[prompt_type][parent_node._ID] = 0
+
+# class SelectionPriorityQueue:
+#     def __init__(self, priority_func):
+#         self._heap = []
+#         self._counter = itertools.count()
+#         self.priority_func = priority_func
+#         self._lock = threading.Lock()
+#
+#     def push(self, item):
+#         with self._lock:
+#             priority = self.priority_func(item)
+#             count = next(self._counter)
+#             heapq.heappush(self._heap, (priority, count, item))
+#
+#     def pop(self):
+#         if not self._heap:
+#             raise IndexError("pop from an empty priority queue")
+#
+#         with self._lock:
+#             priority, count, item = heapq.heappop(self._heap)
+#         return item
+#
+#     def peek(self):
+#         if not self._heap:
+#             raise None
+#
+#         with self._lock:
+#             priority, count, item = self._heap[0]
+#         return item
+#
+#     def __len__(self):
+#         return len(self._heap)
+#
+#     def is_empty(self):
+#         return len(self._heap) == 0

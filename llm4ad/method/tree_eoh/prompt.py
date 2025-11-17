@@ -3,7 +3,8 @@ from __future__ import annotations
 import copy
 from typing import List, Dict
 
-from ...base import *
+# from ...base import *
+from .base.code import Function
 
 
 class TreePrompt:
@@ -35,7 +36,7 @@ Do not give additional explanations.'''
     @classmethod
     def get_prompt_e1(cls, task_prompt: str, indivs: List[Function], template_function: Function):
         for indi in indivs:
-            assert hasattr(indi, 'algorithm')
+            assert hasattr(indi, 'thought')
         # template
         temp_func = copy.deepcopy(template_function)
         temp_func.body = ''
@@ -43,7 +44,7 @@ Do not give additional explanations.'''
         indivs_prompt = ''
         for i, indi in enumerate(indivs):
             indi.docstring = ''
-            indivs_prompt += f'No. {i + 1} algorithm and the corresponding code are:\n{indi.algorithm}\n{str(indi)}'
+            indivs_prompt += f'No. {i + 1} algorithm and the corresponding code are:\n{indi.thought}\n{str(indi)}'
         # create prmpt content
         prompt_content = f'''{task_prompt}
 I have {len(indivs)} existing algorithms with their codes as follows:
@@ -58,7 +59,7 @@ Do not give additional explanations.'''
     @classmethod
     def get_prompt_e2(cls, task_prompt: str, indivs: List[Function], template_function: Function):
         for indi in indivs:
-            assert hasattr(indi, 'algorithm')
+            assert hasattr(indi, 'thought')
 
         # template
         temp_func = copy.deepcopy(template_function)
@@ -67,7 +68,7 @@ Do not give additional explanations.'''
         indivs_prompt = ''
         for i, indi in enumerate(indivs):
             indi.docstring = ''
-            indivs_prompt += f'No. {i + 1} algorithm and the corresponding code are:\n{indi.algorithm}\n{str(indi)}'
+            indivs_prompt += f'No. {i + 1} algorithm and the corresponding code are:\n{indi.thought}\n{str(indi)}'
         # create prmpt content
         prompt_content = f'''{task_prompt}
 I have {len(indivs)} existing algorithms with their codes as follows:
@@ -82,7 +83,7 @@ Do not give additional explanations.'''
 
     @classmethod
     def get_prompt_m1(cls, task_prompt: str, indi: Function, template_function: Function):
-        assert hasattr(indi, 'algorithm')
+        assert hasattr(indi, 'thought')
         # template
         temp_func = copy.deepcopy(template_function)
         temp_func.body = ''
@@ -90,7 +91,7 @@ Do not give additional explanations.'''
         # create prmpt content
         prompt_content = f'''{task_prompt}
 I have one algorithm with its code as follows. Algorithm description:
-{indi.algorithm}
+{indi.thought}
 Code:
 {str(indi)}
 Please assist me in creating a new algorithm that has a different form but can be a modified version of the algorithm provided.
@@ -102,14 +103,14 @@ Do not give additional explanations.'''
 
     @classmethod
     def get_prompt_m2(cls, task_prompt: str, indi: Function, template_function: Function):
-        assert hasattr(indi, 'algorithm')
+        assert hasattr(indi, 'thought')
         # template
         temp_func = copy.deepcopy(template_function)
         temp_func.body = ''
         # create prmpt content
         prompt_content = f'''{task_prompt}
 I have one algorithm with its code as follows. Algorithm description:
-{indi.algorithm}
+{indi.thought}
 Code:
 {str(indi)}
 Please identify the main algorithm parameters and assist me in creating a new algorithm that has a different parameter settings of the score function provided.

@@ -119,6 +119,7 @@ class ExploreEoH:
         self._evaluator = SecureEvaluator(evaluation, debug_mode=debug_mode, **kwargs)
         self._profiler = profiler
         self._duplicate_count = 0
+        self._infeasible_count = 0
         self._duplicate_lock = Lock()
 
         # statistics
@@ -202,7 +203,10 @@ class ExploreEoH:
         if self._population.if_ID_duplicate(func.ID):   # Step 1.3: 先检查ID是否重复，再evaluate
             print_success(f'Success: Duplicate ID {func.ID} found, ')
             with self._duplicate_lock:
-                self._duplicate_count += 1
+                if func.ID is None:
+                    self._infeasible_count += 1
+                else:
+                    self._duplicate_count += 1
             return
 
         # evaluate
@@ -359,7 +363,7 @@ class ExploreEoH:
             self._profiler.finish()
 
         self._sampler.llm.close()
-        self._profiler.record_duplicate_count(self._duplicate_count)
+        self._profiler.record_duplicate_count(self._duplicate_count, self._infeasible_count)
 
     def test_register_template(self):
         """A test function to register the template program to population and profiler.

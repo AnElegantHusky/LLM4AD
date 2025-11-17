@@ -51,7 +51,8 @@ class TreeProfiler(ProfilerBase):
                     self._record_and_print_verbose(function, resume_mode=resume_mode)
                     self._write_json(function, program)
             finally:
-                self._register_function_lock.release()
+                if self._register_function_lock.locked():
+                    self._register_function_lock.release()
         else:
             try:
                 with self._register_function_lock:
@@ -59,7 +60,8 @@ class TreeProfiler(ProfilerBase):
                     self._record_and_print_verbose(function, resume_mode=resume_mode)
                     self._write_json(function, program)
             finally:
-                self._register_function_lock.release()
+                if self._register_function_lock.locked():
+                    self._register_function_lock.release()
 
     def _write_json(self, function: Function, program='', *, record_type='history', record_sep=200):
         """Write function data to a JSON file.
@@ -105,10 +107,10 @@ class TreeProfiler(ProfilerBase):
         with open(path, 'w') as json_file:
             json.dump(data, json_file, indent=4)
 
-    def record_duplicate_count(self, duplicate_count):
+    def record_duplicate_count(self, duplicate_count, infeasible_count):
         path = os.path.join(self._log_dir, 'duplicate_count.txt')
         with open(path, 'w') as f:
-            f.write(f"duplicate_count: {duplicate_count}\n")
+            f.write(f"duplicate_count: {duplicate_count}\ninfeasible_count: {infeasible_count}\n")
 
 
 class TreeTensorboardProfiler(TensorboardProfiler, TreeProfiler):
