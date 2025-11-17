@@ -170,13 +170,12 @@ class TreeEoH:
                 with self._duplicate_lock:
                     self._infeasible_count += 1
                 return
-        else:
-            if self._population.if_ID_duplicate(func.ID):
-                print_success(f'Warning: Duplicate ID {func.ID} found, ')
-                with self._duplicate_lock:
-                    self._duplicate_count += 1
-                    self._population.feedback(parents, prompt_type)
-                return
+        elif self._population.if_ID_duplicate(func.ID):
+            print_success(f'Warning: Duplicate ID {func.ID} found, ')
+            with self._duplicate_lock:
+                self._duplicate_count += 1
+                self._population.feedback(parents, prompt_type)
+            return
 
         # evaluate
         res, eval_time = self._evaluation_executor.submit(
