@@ -36,3 +36,19 @@ class ResultLoader:
         print(result_dict['program'])
         return result_dict
 
+    def get_runable_best_result(self, function_name):
+        import numpy as np
+        import random
+
+        print("Loading best function... ======================")
+        function_str = self.get_search_result(-1)['function']
+
+        global_namespace = {
+            'np': np,
+            'random': random,
+        }
+
+        exec(function_str, global_namespace)
+        return global_namespace[function_name]
+
+
