@@ -18,9 +18,14 @@ def print_success(message):
     """打印一条绿色的成功信息"""
     print(f"{Fore.GREEN}Success： {message}")
 
+def print_info(message):
+    """打印一条蓝色的检查信息"""
+    print(f"{Fore.BLUE}Info： {message}")
+
 # 你也可以直接导出颜色，以防其他地方需要自定义
 # (但通常更推荐使用上面的函数)
 c_error = Fore.RED + Style.BRIGHT
 c_warning = Fore.YELLOW
 c_success = Fore.GREEN
+c_info = Fore.BLUE
 c_reset = Style.RESET_ALL

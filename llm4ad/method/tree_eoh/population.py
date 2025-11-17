@@ -12,10 +12,7 @@ import overrides
 
 from .base.code import Function
 from .base.print_utils import print_error
-import queue
-import heapq
-import itertools
-import threading
+
 
 class TreeNode():
     def __init__(self, sample_order, func, level):

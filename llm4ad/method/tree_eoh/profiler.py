@@ -5,6 +5,7 @@ import os
 from abc import ABC, abstractmethod
 from threading import Lock
 from typing import List, Dict, Optional
+from .base.print_utils import print_success
 
 try:
     import wandb
@@ -107,10 +108,12 @@ class TreeProfiler(ProfilerBase):
         with open(path, 'w') as json_file:
             json.dump(data, json_file, indent=4)
 
-    def record_duplicate_count(self, duplicate_count, infeasible_count):
+    def record_operator_count(self, current_operator_count, total_operator_count, duplicate_count, infeasible_count):
         path = os.path.join(self._log_dir, 'duplicate_count.txt')
         with open(path, 'w') as f:
-            f.write(f"duplicate_count: {duplicate_count}\ninfeasible_count: {infeasible_count}\n")
+            info = f"current_count: {current_operator_count}\ntarget_total_operator_num: {total_operator_count}\nduplicate_count: {duplicate_count}\ninfeasible_count: {infeasible_count}\n"
+            print_success(info)
+            f.write(info)
 
 
 class TreeTensorboardProfiler(TensorboardProfiler, TreeProfiler):

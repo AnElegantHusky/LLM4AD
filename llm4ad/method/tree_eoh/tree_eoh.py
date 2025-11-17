@@ -36,7 +36,7 @@ from .profiler import TreeProfiler
 from .prompt import TreePrompt
 from .sampler import TreeSampler
 from .base.code import Function, Program, TextFunctionProgramConverter
-from .base.print_utils import print_error, print_success, print_warning
+from .base.print_utils import print_error, print_success, print_warning, print_info
 from .evaluate import Evaluation, SecureEvaluator
 from ...base import LLM
 
@@ -132,6 +132,8 @@ class TreeEoH:
                 max_workers=num_evaluators
             )
 
+        self._executor_shutdown = False
+
         # pass parameters to profiler
         if profiler is not None:
             self._profiler.record_parameters(llm, evaluation, self)  # ZL: necessary
@@ -166,10 +168,10 @@ class TreeEoH:
 
         # process the first infeasible case
         if func.ID is None:
-            if prompt_type != 'I1':
-                with self._duplicate_lock:
-                    self._infeasible_count += 1
-                return
+            # if prompt_type != 'I1':
+            with self._duplicate_lock:
+                self._infeasible_count += 1
+            return
         elif self._population.if_ID_duplicate(func.ID):
             print_success(f'Warning: Duplicate ID {func.ID} found, ')
             with self._duplicate_lock:
@@ -184,6 +186,7 @@ class TreeEoH:
         ).result()
 
         # register to profiler
+        # with self._duplicate_lock:
         func.score = res
         func.evaluate_time = eval_time
         func.thought = thought
@@ -200,6 +203,7 @@ class TreeEoH:
 
     def _iteratively_use_eoh_operator(self):
         while self._continue_loop():
+            # self._profiler.record_operator_count(len(self._population), self._max_sample_nums, self._duplicate_count, self._infeasible_count)
             try:
                 # get a new func using e1
                 indivs = self._population.select(self._selection_num, 'E1')
@@ -249,12 +253,14 @@ class TreeEoH:
                 continue
 
         # shutdown evaluation_executor
-        try:
-            self._evaluation_executor.shutdown(cancel_futures=True)
-        except Exception as e:
-            if self._debug_mode:
-                traceback.print_exc()
-                exit()
+        if not self._executor_shutdown:
+            try:
+                self._evaluation_executor.shutdown(cancel_futures=True)
+                self._executor_shutdown = True
+            except Exception as e:
+                if self._debug_mode:
+                    traceback.print_exc()
+                    exit()
 
     def _iteratively_init_population(self):
         """Let a thread repeat {sample -> evaluate -> register to population}
@@ -319,7 +325,7 @@ class TreeEoH:
             self._profiler.finish()
 
         self._sampler.llm.close()
-        self._profiler.record_duplicate_count(self._duplicate_count, self._infeasible_count)
+        self._profiler.record_operator_count(len(self._population), self._tot_sample_nums, self._duplicate_count, self._infeasible_count)
 
     def test_register_template(self):
         """A test function to register the template program to population and profiler.
