@@ -31,11 +31,6 @@ class ResultLoader:
         print(result_dict['function'])
         return result_dict
 
-    def get_best_result_str(self, idx):
-        result_dict = self.best_result[idx]
-        print(result_dict['function'])
-        return result_dict['function']
-
     def get_search_result(self, idx):
         result_dict = self.search_result[idx]
         print(result_dict['program'])
