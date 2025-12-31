@@ -25,10 +25,9 @@ import time
 from abc import ABC, abstractmethod
 from typing import Any, Literal
 
-from .code import TextFunctionProgramConverter, Program
-from .modify_code import ModifyCode
-from .print_utils import print_error
-
+from .base.code import TextFunctionProgramConverter, Program
+from .base.print_utils import print_error
+from ...base.modify_code import ModifyCode
 
 
 class Evaluation(ABC):
@@ -132,6 +131,15 @@ class Evaluation(ABC):
         and '_protected_dev' will be added by this function.
         """
         raise NotImplementedError('Must provide a evaluator for a function.')
+
+    @abstractmethod
+    def evaluate_ID(self, program_str: str, callable_func: callable, **kwargs) -> Any | None:
+        raise NotADirectoryError('Must provide a ID for each function.')
+
+    # note
+    # @abstractmethod
+    # def generate_program_ID(self, callable_func: callable, **kwargs) -> str:
+    #     raise NotImplementedError('Must provide a evaluator for a function.')
 
 
 class SecureEvaluator:
@@ -297,6 +305,7 @@ class SecureEvaluator:
 
             # get evaluate result
             res = self._evaluator.evaluate_program(program_str, program_callable, **kwargs)
+            # ID = self._evaluator.generate_program_ID(program_callable, **kwargs)
             result_queue.put(res)
         except Exception as e:
             if self._debug_mode:

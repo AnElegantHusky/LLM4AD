@@ -146,37 +146,61 @@ class TreeEoH:
         """
         sample_start = time.time()
         thought, func = self._sampler.get_thought_and_function(prompt)
+
+        sample_time = time.time() - sample_start
+        func.sample_time = sample_time
+
+        if thought is None or func is None:
+            return
+        else:
+            self._evaluate_and_register(func, thought, parents, prompt_type)
+
+    def _sample_multiple_evaluate_register(self, prompt, parents: list[str] | None, prompt_type: str):
+        sample_start = time.time()
+        res_list = self._sampler.get_multiple_thought_and_function(prompt)
+        sample_time = time.time() - sample_start
+
+        for thought, func in res_list:
+            func.sample_time = sample_time
+            if thought is None or func is None:
+                continue
+            else:
+                self._evaluate_and_register(func, thought, parents, prompt_type)
+
+
+    def _evaluate_and_register(self, func, thought, parents, prompt_type):
         func.parents = parents
         func.prompt_type = prompt_type
 
-        sample_time = time.time() - sample_start
-        if thought is None or func is None:
-            return
         # convert to Program instance
         program = TextFunctionProgramConverter.function_to_program(func, self._template_program)
         if program is None:
             return
 
         # program = self._evaluator._modify_program_code(program)
-
         # obtain and check ID
         ID = self._evaluation_executor.submit(
             self._evaluator.evaluate_ID,
             program
         ).result()
         func.ID = ID
+        func.thought = thought
+
+        func.score = -float('inf')
 
         # process the first infeasible case
         if func.ID is None:
             # if prompt_type != 'I1':
             with self._duplicate_lock:
                 self._infeasible_count += 1
+            self._profiler.register_function(func, program=str(program))
             return
         elif self._population.if_ID_duplicate(func.ID):
             print_success(f'Warning: Duplicate ID {func.ID} found, ')
             with self._duplicate_lock:
                 self._duplicate_count += 1
                 self._population.feedback(parents, prompt_type)
+            self._profiler.register_function(func, program=str(program))
             return
 
         # evaluate
@@ -189,14 +213,13 @@ class TreeEoH:
         # with self._duplicate_lock:
         func.score = res
         func.evaluate_time = eval_time
-        func.thought = thought
-        func.sample_time = sample_time
-        if self._profiler is not None:
-            self._profiler.register_function(func, program=str(program))
-            self._tot_sample_nums += 1
+
+        self._profiler.register_function(func, program=str(program))
+        self._tot_sample_nums += 1
 
         # register to the population
         self._population.register_function(func)
+
 
     def _continue_loop(self) -> bool:
         return self._tot_sample_nums < self._max_sample_nums
@@ -262,6 +285,26 @@ class TreeEoH:
                     traceback.print_exc()
                     exit()
 
+    # def _iteratively_init_population(self):
+    #     """Let a thread repeat {sample -> evaluate -> register to population}
+    #     to initialize a population.
+    #     """
+    #     while len(self._population.population) < self._selection_num:
+    #         try:
+    #             # get a new func using i1
+    #             prompt = TreePrompt.get_prompt_i1(self._task_description_str, self._function_to_evolve)
+    #             self._sample_evaluate_register(prompt, None, 'I1')
+    #             if self._tot_sample_nums >= self._initial_sample_nums_max:
+    #                 # print(f'Warning: Initialization not accomplished in {self._initial_sample_nums_max} samples !!!')
+    #                 print(
+    #                     f'Note: During initialization, EoH gets {len(self._population)} algorithms')
+    #                 break
+    #         except Exception:
+    #             if self._debug_mode:
+    #                 traceback.print_exc()
+    #                 exit()
+    #             continue
+
     def _iteratively_init_population(self):
         """Let a thread repeat {sample -> evaluate -> register to population}
         to initialize a population.
@@ -269,8 +312,8 @@ class TreeEoH:
         while len(self._population.population) < self._selection_num:
             try:
                 # get a new func using i1
-                prompt = TreePrompt.get_prompt_i1(self._task_description_str, self._function_to_evolve)
-                self._sample_evaluate_register(prompt, None, 'I1')
+                prompt = TreePrompt.get_prompt_i2(self._task_description_str, self._function_to_evolve, 5)
+                self._sample_multiple_evaluate_register(prompt, None, 'I2')
                 if self._tot_sample_nums >= self._initial_sample_nums_max:
                     # print(f'Warning: Initialization not accomplished in {self._initial_sample_nums_max} samples !!!')
                     print(
@@ -308,7 +351,8 @@ class TreeEoH:
                     exit()
 
             # do initialization
-            self._multi_threaded_sampling(self._iteratively_init_population)
+            # self._multi_threaded_sampling(self._iteratively_init_population)
+            self._iteratively_init_population()
             # terminate searching if
             if len(self._population) < self._selection_num:
                 print(

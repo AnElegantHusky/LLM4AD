@@ -54,7 +54,7 @@ class EoHProfiler(ProfilerBase):
                 f_json = {
                     'algorithm': f.algorithm,
                     'function': str(f),
-                    'score': f.score
+                    'score': f.score,
                 }
                 funcs_json.append(f_json)
             path = os.path.join(self._ckpt_dir, f'pop_{pop.generation}.json')
@@ -83,6 +83,7 @@ class EoHProfiler(ProfilerBase):
             'algorithm': function.algorithm,  # Added when recording
             'function': str(function),
             'score': function.score,
+            'ID': function.ID,
             'program': program,
         }
 

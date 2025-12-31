@@ -165,7 +165,15 @@ class FunSearch:
                             island_id=island_id,
                             score=score
                         )
-                    # register to profiler
+
+                    if hasattr(self._evaluator, 'evaluate_ID'):
+                        ID = self._evaluation_executor.submit(
+                            self._evaluator.evaluate_ID,
+                            program
+                        ).result()
+                        function.ID = ID
+
+                        # register to profiler
                     if self._profiler is not None:
                         function.score = score
                         function.sample_time = avg_time_for_each_sample

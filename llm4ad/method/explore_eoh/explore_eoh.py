@@ -199,6 +199,9 @@ class ExploreEoH:
             program
         ).result()
         func.ID = ID  # Step 1.2: 记录ID
+        func.algorithm = thought
+        func.sample_time = sample_time
+        func.score = -float('inf')
 
         if self._population.if_ID_duplicate(func.ID):   # Step 1.3: 先检查ID是否重复，再evaluate
             print_success(f'Success: Duplicate ID {func.ID} found, ')
@@ -207,6 +210,7 @@ class ExploreEoH:
                     self._infeasible_count += 1
                 else:
                     self._duplicate_count += 1
+                self._profiler.register_function(func, program=str(program))
             return
 
         # evaluate
@@ -218,8 +222,7 @@ class ExploreEoH:
         # register to profiler
         func.score = res
         func.evaluate_time = eval_time
-        func.algorithm = thought
-        func.sample_time = sample_time
+
         if self._profiler is not None:
             self._profiler.register_function(func, program=str(program))
             if isinstance(self._profiler, ExploreProfiler):
@@ -316,7 +319,6 @@ class ExploreEoH:
             except Exception:
                 if self._debug_mode:
                     traceback.print_exc()
-                    exit()
                 continue
 
     def _multi_threaded_sampling(self, fn: callable, *args, **kwargs):

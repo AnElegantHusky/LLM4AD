@@ -131,6 +131,7 @@ class ProfilerBase:
             'sample_order': sample_order,
             'function': str(function),
             'score': function.score,
+            'ID': function.ID,
             'program': program,
         }
 

@@ -33,16 +33,18 @@ import traceback
 from threading import Thread
 from typing import Literal, Optional
 
-from .profiler import HillClimbProfiler
 from ...base import *
-from .._utils.print_utils import print_exception
+from .profiler import InitDebugProfiler
+from .._utils.print_utils import print_exception, print_info
+
+import multiprocessing
 
 
-class HillClimb:
+class InitDebug:
     def __init__(self,
                  llm: LLM,
                  evaluation: Evaluation,
-                 profiler: HillClimbProfiler = None,
+                 profiler: InitDebugProfiler = None,
                  max_sample_nums: Optional[int] = 20,
                  num_samplers: int = 4,
                  num_evaluators: int = 4,
@@ -111,18 +113,77 @@ class HillClimb:
         if profiler is not None:
             self._profiler.record_parameters(llm, evaluation, self)  # ZL: necessary
 
+    def _debug_evaluate_in_safe_process(self, program_str: str, function_name, result_queue: multiprocessing.Queue, **kwargs):
+        # try:
+
+        # compile the program, and maps the global func/var/class name to its address
+        all_globals_namespace = {}
+        # execute the program, map func/var/class to global namespace
+        exec(program_str, all_globals_namespace)
+        # get the pointer of 'function_to_run'
+        program_callable = all_globals_namespace[function_name]
+
+        # get evaluate result
+        res = self._evaluator._evaluator.evaluate_program(program_str, program_callable, **kwargs)
+        result_queue.put(res)
+
+        # except Exception as e:
+        #     traceback.print_exc()
+        #     print_exception(e, '_evaluate_in_safe_process')
+        #     result_queue.put(None)
+
+    def _debug_evaluate_program(self, program: str | Program, **kwargs) -> float:
+        # try:
+        program_str = str(program)
+        # record function name BEFORE modifying program code
+        function_name = TextFunctionProgramConverter.text_to_function(program_str).name
+
+        program_str = self._evaluator._modify_program_code(program_str)
+        if self._debug_mode:
+            print(f'DEBUG: evaluated program:\n{program_str}\n')
+
+        # safe evaluate
+        result_queue = multiprocessing.Queue()
+        # process = multiprocessing.Process(
+        #     target=self._debug_evaluate_in_safe_process,
+        #     args=(program_str, function_name, result_queue),
+        #     kwargs=kwargs,
+        #     daemon=False
+        # )
+        # process.start()
+
+        self._debug_evaluate_in_safe_process(program_str, function_name, result_queue)
+        result = result_queue.get()
+
+        print_info(result)
+
+
+        # process.terminate()
+        # process.join(timeout=5)
+        # if process.is_alive():
+        #     process.kill()
+        #     process.join()
+
+        return result
+
+        # except Exception as e:
+        #     print_exception(e, '_debug_evaluate_program')
+        #     return None
+
+
+
     def _init(self):
         # evaluate the template program, make sure the score of which is not 'None'
-        score, eval_time = self._evaluator.evaluate_program_record_time(program=self._template_program)
-        if score is None:
-            raise RuntimeError('The score of the template function must not be "None".')
-        self._best_function_found.score = score
-
-        # register the template program to the program database
-        if self._profiler:
-            self._function_to_evolve.score = score
-            self._function_to_evolve.evaluate_time = eval_time
-            self._profiler.register_function(self._function_to_evolve, program=str(self._template_program))
+        result = self._debug_evaluate_program(program=self._template_program)
+        # if score is None:
+        #     raise RuntimeError('The score of the template function must not be "None".')
+        # self._best_function_found.score = score
+        #
+        # # register the template program to the program database
+        # if self._profiler:
+        #     self._function_to_evolve.score = score
+        #     self._function_to_evolve.evaluate_time = eval_time
+        #     self._profiler.register_function(self._function_to_evolve, program=str(self._template_program))
 
     def _get_prompt(self) -> str:
         template = TextFunctionProgramConverter.function_to_program(self._best_function_found, self._template_program)

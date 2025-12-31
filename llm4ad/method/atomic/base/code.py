@@ -52,6 +52,8 @@ import copy
 import dataclasses
 from typing import Any, List, Callable
 
+from .print_utils import print_error
+
 
 @dataclasses.dataclass
 class Function:
@@ -94,10 +96,10 @@ class Function:
 
     def __eq__(self, other: Function):
         assert isinstance(other, Function)
-        return (self.name == other.name and
-                self.args == other.args and
-                self.return_type == other.return_type and
-                self.body == other.body)
+        return (self.ID == other.ID) or (self.name == other.name and
+                                         self.args == other.args and
+                                         self.return_type == other.return_type and
+                                         self.body == other.body)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -231,7 +233,8 @@ class TextFunctionProgramConverter:
             visitor = _ProgramVisitor(program_str)
             visitor.visit(tree)
             return visitor.return_program()
-        except:
+        except Exception as e:
+            print_error(f"TextFunctionProgramConverter.text_to_program: {type(e).__name__}: {e}")
             return None
 
     @classmethod
@@ -245,8 +248,10 @@ class TextFunctionProgramConverter:
                                  f':\n{program.functions}')
             return program.functions[0]
         except ValueError as value_err:
+            print_error(f"TextFunctionProgramConverter.text_to_function: {type(value_err).__name__}: {value_err}")
             raise value_err
-        except:
+        except Exception as e:
+            print_error(f"TextFunctionProgramConverter.text_to_function: {type(e).__name__}: {e}")
             return None
 
     @classmethod
@@ -273,8 +278,10 @@ class TextFunctionProgramConverter:
             template_program.functions[0].body = function.body
             return template_program
         except ValueError as value_err:
+            print_error(f"TextFunctionProgramConverter.function_to_program: {type(value_err).__name__}: {value_err}")
             raise value_err
-        except:
+        except Exception as e:
+            print_error(f"TextFunctionProgramConverter.function_to_program: {type(e).__name__}: {e}")
             return None
 
     @classmethod
@@ -294,6 +301,8 @@ class TextFunctionProgramConverter:
             # return the function
             return program.functions[0]
         except ValueError as value_err:
+            print_error(f"TextFunctionProgramConverter.program_to_function: {type(value_err).__name__}: {value_err}")
             raise value_err
-        except:
+        except Exception as e:
+            print_error(f"TextFunctionProgramConverter.program_to_function: {type(e).__name__}: {e}")
             return None

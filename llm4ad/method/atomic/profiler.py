@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+from abc import ABC, abstractmethod
 from threading import Lock
 from typing import List, Dict, Optional
 
@@ -11,11 +12,12 @@ except:
     pass
 
 from .population import Population
-from ...base import Function
+from .base.code import Function
 from ...tools.profiler import TensorboardProfiler, ProfilerBase, WandBProfiler
 
 
-class ReEvoProfiler(ProfilerBase):
+class AtomicProfiler(ProfilerBase):
+
     def __init__(self,
                  log_dir: Optional[str] = None,
                  *,
@@ -23,7 +25,7 @@ class ReEvoProfiler(ProfilerBase):
                  log_style='complex',
                  create_random_path=True,
                  **kwargs):
-        """ReEvo Profiler
+        """EoH Profiler
         Args:
             log_dir            : the directory of current run
             initial_num_samples: the sample order start with `initial_num_samples`.
@@ -52,7 +54,8 @@ class ReEvoProfiler(ProfilerBase):
                 f_json = {
                     'algorithm': f.algorithm,
                     'function': str(f),
-                    'score': f.score
+                    'score': f.score,
+                    'ID': f.ID      # Step 1.5 保存ID
                 }
                 funcs_json.append(f_json)
             path = os.path.join(self._ckpt_dir, f'pop_{pop.generation}.json')
@@ -81,7 +84,7 @@ class ReEvoProfiler(ProfilerBase):
             'algorithm': function.algorithm,  # Added when recording
             'function': str(function),
             'score': function.score,
-            'ID': function.ID,
+            'ID': function.ID,  # Step 1.5 保存ID
             'program': program,
         }
 
@@ -105,8 +108,13 @@ class ReEvoProfiler(ProfilerBase):
         with open(path, 'w') as json_file:
             json.dump(data, json_file, indent=4)
 
+    def record_duplicate_count(self, duplicate_count, infeasible_count):
+        path = os.path.join(self._log_dir, 'duplicate_count.txt')
+        with open(path, 'w') as f:
+            f.write(f"duplicate_count: {duplicate_count}\ninfeasible_count: {infeasible_count}\n")
 
-class ReEvoTensorboardProfiler(TensorboardProfiler, ReEvoProfiler):
+
+class AtomicTensorboardProfiler(TensorboardProfiler, AtomicProfiler):
 
     def __init__(self,
                  log_dir: str | None = None,
@@ -115,14 +123,14 @@ class ReEvoTensorboardProfiler(TensorboardProfiler, ReEvoProfiler):
                  log_style='complex',
                  create_random_path=True,
                  **kwargs):
-        """Profiler for Tensorboard.
+        """EoH Profiler for Tensorboard.
         Args:
             log_dir            : the directory of current run
-            initial_num_samples: the sample order start with `initial_num_samples`.
+            evaluation_name    : the name of the evaluation instance (the name of the problem to be solved).
             create_random_path : create a random log_path according to evaluation_name, method_name, time, ...
             **kwargs           : kwargs for wandb
         """
-        ReEvoProfiler.__init__(
+        AtomicProfiler.__init__(
             self, log_dir=log_dir,
             create_random_path=create_random_path,
             **kwargs
@@ -140,15 +148,8 @@ class ReEvoTensorboardProfiler(TensorboardProfiler, ReEvoProfiler):
         if self._log_dir:
             self._writer.close()
 
-        filename = 'end.json'
-        path = os.path.join(os.path.join(self._log_dir, 'population'), filename)
 
-        with open(path, 'w') as json_file:
-            json.dump([], json_file, indent=4)
-
-
-class ReEvoWandbProfiler(WandBProfiler, ReEvoProfiler):
-    _cur_gen = 0
+class AtomicWandbProfiler(WandBProfiler, AtomicProfiler):
 
     def __init__(self,
                  wandb_project_name: str,
@@ -158,7 +159,7 @@ class ReEvoWandbProfiler(WandBProfiler, ReEvoProfiler):
                  log_style='complex',
                  create_random_path=True,
                  **kwargs):
-        """Profiler for Wandb.
+        """EoH Profiler for Wandb.
         Args:
             wandb_project_name : the name of the wandb project
             log_dir            : the directory of current run
@@ -166,7 +167,7 @@ class ReEvoWandbProfiler(WandBProfiler, ReEvoProfiler):
             create_random_path : create a random log_path according to evaluation_name, method_name, time, ...
             **kwargs           : kwargs for wandb
         """
-        ReEvoProfiler.__init__(
+        AtomicProfiler.__init__(
             self,
             log_dir=log_dir,
             create_random_path=create_random_path,
@@ -188,8 +189,3 @@ class ReEvoWandbProfiler(WandBProfiler, ReEvoProfiler):
 
     def finish(self):
         wandb.finish()
-        filename = 'end.json'
-        path = os.path.join(os.path.join(self._log_dir, 'population'), filename)
-
-        with open(path, 'w') as json_file:
-            json.dump([], json_file, indent=4)

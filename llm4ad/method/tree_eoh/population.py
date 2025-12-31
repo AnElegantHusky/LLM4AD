@@ -70,7 +70,7 @@ class TreePopulation:
         # 4. 访问 所有叶子节点
         self._leaf_nodes: set[TreeNode] = set()
 
-        self._sample_order = 0
+        self._sample_count = 0
 
         self._tabu_dict = {
             'E1': {},
@@ -116,8 +116,8 @@ class TreePopulation:
         向树中添加一个新节点。
         这是唯一应该用于添加节点的方法，以确保索引一致。
         """
-        sample_order = self._sample_order
-        self._sample_order += 1
+        sample_order = self._sample_count
+        self._sample_count += 1
 
         if func.parents in [None, [], [None]]:
             parents = None
@@ -180,29 +180,111 @@ class TreePopulation:
         # 返回集合的副本
         return set(self._leaf_nodes)
 
-    def select(self, n, prompt_type) -> Function | list[Function]:
+    def select(self, n, prompt_type) -> list[Function]:
         with self._lock:
-            # step 1: if there are leaf nodes not in tabu, select the ones with minimum level
-            tabu_dict = self._tabu_dict[prompt_type]
-            leaf_list = [node for node in self._leaf_nodes if node._ID not in tabu_dict]
+            try:
+                tabu_dict = self._tabu_dict[prompt_type]
 
-            if len(leaf_list) >= n:
-                min_level_nodes = sorted(leaf_list, key=lambda x: x._level)[:n]
-                return [x._func for x in min_level_nodes]
+                # --- Step 1: 准备三个互斥的候选池 ---
+                # 获取所有非Tabu的节点
+                non_tabu_nodes = [
+                    node for node in self._nodes_by_index.values()
+                    if node._ID not in tabu_dict
+                ]
 
-            # step 2: if there are non-leaf nodes not in tabu, select from all nodes not in tabu
-            node_list = [node for node in self._nodes_by_index.values() if node._ID not in tabu_dict]
-            if len(node_list) >= n:
-                min_nodes = sorted(node_list, key=lambda x: x._level)[:n]
-                return [x._func for x in min_nodes]
+                # Tier 1: Leaf & Non-Tabu (最高优先级)
+                # 假设 leaf_nodes 里的节点一定也在 nodes_by_index 里
+                tier1_leaves = [node for node in self._leaf_nodes if node._ID not in tabu_dict]
+                tier1_ids = {node._ID for node in tier1_leaves}
 
-            # step 3: otherwise, select the best available node
-            else:
-                func = sorted(node_list, key=lambda x: x._func.score, reverse=True)
-                p = [1 / (r + len(func)) for r in range(len(func))]
-                p = np.array(p)
-                p = p / np.sum(p)
-                return np.random.choice(func, p=p)
+                # Tier 2: Non-Leaf & Non-Tabu (次优先级)
+                tier2_internal = [node for node in non_tabu_nodes if node._ID not in tier1_ids]
+
+                # Tier 3: Tabu Nodes (最低优先级，兜底)
+                tier3_tabu = [
+                    node for node in self._nodes_by_index.values()
+                    if node._ID in tabu_dict
+                ]
+
+                # 放入列表，按优先级排序
+                candidate_tiers = [tier1_leaves, tier2_internal, tier3_tabu]
+
+                selected_nodes = []
+
+                # --- Step 2: 级联选择逻辑 ---
+                for pool in candidate_tiers:
+                    needed = n - len(selected_nodes)
+                    if needed <= 0:
+                        break  # 已经选够了
+
+                    if not pool:
+                        continue  # 当前层级为空，跳过
+
+                    if len(pool) <= needed:
+                        # 情况 A: 当前层级不够或刚好填满需求 -> 全选
+                        selected_nodes.extend(pool)
+                    else:
+                        # 情况 B: 当前层级充裕 -> 基于 Score 进行加权随机采样 (填满剩余 needed)
+                        selected_subset = self._weighted_sample(pool, needed)
+                        selected_nodes.extend(selected_subset)
+                        break  # 选够了，结束
+
+                # 返回对应的 Function 对象
+                return [node._func for node in selected_nodes]
+
+            except Exception as e:
+                print_error(f'TreePopulation.select: {type(e).__name__}: {e}')
+                # 这里的 fallback 可以根据情况决定是否需要 return 空列表
+                return []
+
+    def _weighted_sample(self, node_list, k):
+        """
+        辅助函数：根据 _func.score 进行加权无放回采样。
+        使用了 Softmax 思想将 score 转化为概率，处理负数 score 的情况。
+        """
+        if k == 0:
+            return []
+
+        scores = np.array([node._func.score for node in node_list])
+
+        # 策略：使用 Softmax 将分数转换为概率分布
+        # 1. 减去最大值防止 exp 溢出 (数值稳定性)
+        exp_scores = np.exp(scores - np.max(scores))
+        probs = exp_scores / np.sum(exp_scores)
+
+        # 2. 使用 numpy 进行加权无放回采样
+        # replace=False 表示无放回
+        selected = np.random.choice(node_list, size=k, replace=False, p=probs)
+        return list(selected)
+
+    # def select(self, n, prompt_type) -> Function | list[Function]:
+    #     with self._lock:
+    #         try:
+    #             # step 1: if there are leaf nodes not in tabu, select the ones with minimum level
+    #             tabu_dict = self._tabu_dict[prompt_type]
+    #             leaf_list = [node for node in self._leaf_nodes if node._ID not in tabu_dict]
+    #
+    #             if len(leaf_list) >= n:
+    #                 min_level_nodes = sorted(leaf_list, key=lambda x: x._level)[:n]
+    #                 return [x._func for x in min_level_nodes]
+    #
+    #             # step 2: if there are non-leaf nodes not in tabu, select from all nodes not in tabu
+    #             node_list = [node for node in self._nodes_by_index.values() if node._ID not in tabu_dict]
+    #             if len(node_list) >= n:
+    #                 min_nodes = sorted(node_list, key=lambda x: x._level)[:n]
+    #                 return [x._func for x in min_nodes]
+    #
+    #             # step 3: otherwise, select the best available node
+    #             else:
+    #                 func = sorted(node_list, key=lambda x: x._func.score, reverse=True)
+    #                 p = [1 / (r + len(func)) for r in range(len(func))]
+    #                 p = np.array(p)
+    #                 p = p / np.sum(p)
+    #                 return np.random.choice(func, p=p)
+    #         except Exception as e:
+    #             print_error(f'TreePopulation.select: {type(e).__name__}: {e}')
+    #             print(self._nodes_by_id.keys())
+
 
     def feedback(self, parents: List[str], prompt_type: str):
         if parents in [None, [], [None]]:

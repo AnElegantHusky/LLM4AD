@@ -31,10 +31,10 @@ class MCTSNode:
                  raw_info=None, Q=0):
         self.algorithm = algorithm
         self.code = code
-        self.parent = parent
+        self.parent = self._parents = parent
         self.depth = depth
         self.individual = individual
-        self.children = []
+        self.children = self._children = []
         self.visits = visit
         self.subtree = []
         self.raw_info = raw_info

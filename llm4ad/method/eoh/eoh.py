@@ -181,6 +181,14 @@ class EoH:
         program = TextFunctionProgramConverter.function_to_program(func, self._template_program)
         if program is None:
             return
+
+        if hasattr(self._evaluator, 'evaluate_ID'):
+            ID = self._evaluation_executor.submit(
+                self._evaluator.evaluate_ID,
+                program
+            ).result()
+            func.ID = ID
+
         # evaluate
         score, eval_time = self._evaluation_executor.submit(
             self._evaluator.evaluate_program_record_time,

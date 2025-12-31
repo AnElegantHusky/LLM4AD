@@ -9,6 +9,7 @@ class ResultLoader:
 
         self.search_result = []
         self.best_result = []
+        self.filtered_search_result = []
 
         self._load_results()
 
@@ -23,6 +24,8 @@ class ResultLoader:
                 sample_list = json.load(f)
             if '~' in basename:
                 self.search_result.extend(sample_list)
+                self.filtered_search_result.extend(
+                    [sample for sample in sample_list if sample['score'] is not -float('inf')])
             elif 'best' in basename:
                 self.best_result.extend(sample_list)
 
@@ -35,4 +38,39 @@ class ResultLoader:
         result_dict = self.search_result[idx]
         print(result_dict['program'])
         return result_dict
+
+    def get_filtered_search_result(self, idx):
+        result_dict = self.filtered_search_result[idx]
+        print(result_dict['program'])
+        return result_dict
+
+    def get_ID_list(self):
+        return [x['ID'] for x in self.search_result]
+
+    def get_fitness_list(self):
+        return [x['score'] for x in self.search_result]
+
+    def print_search_result(self, idx):
+        result_dict = self.search_result[idx]
+        self._print_idx(result_dict)
+
+    def print_best_result(self, idx):
+        result_dict = self.best_result[idx]
+        self._print_idx(result_dict)
+
+    def print_filtered_search_result(self, idx):
+        result_dict = self.filtered_search_result[idx]
+        self._print_idx(result_dict)
+
+    def _print_idx(self, result_dict):
+        print(f"Sample Order: {result_dict['sample_order']}")
+        print(f"Score: {result_dict['score']}")
+        if 'ID' in result_dict:
+            print(f"ID: {result_dict['ID']}")
+        print('\n')
+        if 'thought' in result_dict:
+            print(f"Thought: \n{result_dict['thought']}\n")
+        elif 'algorithm' in result_dict:
+            print(f"Algorithm: \n{result_dict['algorithm']}\n")
+        print(f"Function: \n{result_dict['function']}")
 

@@ -190,6 +190,14 @@ class MCTS_AHD:
         func.evaluate_time = eval_time
         func.algorithm = thought
         func.sample_time = sample_time
+
+        if hasattr(self._evaluator, 'evaluate_ID'):
+            ID = self._evaluation_executor.submit(
+                self._evaluator.evaluate_ID,
+                program
+            ).result()
+            func.ID = ID
+
         if self._profiler is not None:
             self._profiler.register_function(func, program=str(program))
             if isinstance(self._profiler, MAProfiler):

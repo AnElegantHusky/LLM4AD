@@ -83,6 +83,7 @@ class MAProfiler(ProfilerBase):
             'algorithm': function.algorithm,  # Added when recording
             'function': str(function),
             'score': function.score,
+            'ID': function.ID,
             'program': program,
         }
 
