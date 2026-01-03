@@ -234,7 +234,10 @@ class TreeEoH:
                 prompt = TreePrompt.get_prompt_e1(self._task_description_str, indivs, self._function_to_evolve)
                 if self._debug_mode:
                     print(f'E1 Prompt: {prompt}')
-                self._sample_evaluate_register(prompt, parents, 'E1')
+                try:
+                    self._sample_evaluate_register(prompt, parents, 'E1')
+                finally:
+                    self._population.release_parents(indivs)
                 if not self._continue_loop():
                     break
 
@@ -244,7 +247,10 @@ class TreeEoH:
                     prompt = TreePrompt.get_prompt_e2(self._task_description_str, indivs, self._function_to_evolve)
                     if self._debug_mode:
                         print(f'E2 Prompt: {prompt}')
-                    self._sample_evaluate_register(prompt, parents, 'E2')
+                    try:
+                        self._sample_evaluate_register(prompt, parents, 'E2')
+                    finally:
+                        self._population.release_parents(indivs)
                     if not self._continue_loop():
                         break
 
@@ -254,7 +260,10 @@ class TreeEoH:
                     prompt = TreePrompt.get_prompt_m1(self._task_description_str, indiv, self._function_to_evolve)
                     if self._debug_mode:
                         print(f'M1 Prompt: {prompt}')
-                    self._sample_evaluate_register(prompt, parents, 'M1')
+                    try:
+                        self._sample_evaluate_register(prompt, parents, 'M1')
+                    finally:
+                        self._population.release_parents(indivs)
                     if not self._continue_loop():
                         break
 
@@ -264,7 +273,10 @@ class TreeEoH:
                     prompt = TreePrompt.get_prompt_m2(self._task_description_str, indiv, self._function_to_evolve)
                     if self._debug_mode:
                         print(f'M2 Prompt: {prompt}')
-                    self._sample_evaluate_register(prompt, parents, 'M2')
+                    try:
+                        self._sample_evaluate_register(prompt, parents, 'M2')
+                    finally:
+                        self._population.release_parents(indivs)
                     if not self._continue_loop():
                         break
             except KeyboardInterrupt:
@@ -309,7 +321,7 @@ class TreeEoH:
         """Let a thread repeat {sample -> evaluate -> register to population}
         to initialize a population.
         """
-        while len(self._population.population) < self._selection_num:
+        while len(self._population.population) < 2 * self._selection_num:
             try:
                 # get a new func using i1
                 prompt = TreePrompt.get_prompt_i2(self._task_description_str, self._function_to_evolve, 5)

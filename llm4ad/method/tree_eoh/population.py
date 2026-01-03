@@ -79,6 +79,10 @@ class TreePopulation:
             'M2': {}
         }
 
+        # --- 新增: 记录正在处理中的父代组合 (防止并发重复采样) ---
+        # 存储格式: tuple(sorted([ID1, ID2, ...]))
+        self._processing_parents: set[tuple] = set()
+
     def __len__(self):
         return len(self._nodes_by_index)
 
@@ -125,7 +129,6 @@ class TreePopulation:
         else:
             parents = [self.get_node_by_id(pid) for pid in func.parents]
             level = sum([p._level for p in parents]) // len(parents)
-
 
         new_node = TreeNode(
             sample_order=sample_order,
@@ -181,110 +184,147 @@ class TreePopulation:
         return set(self._leaf_nodes)
 
     def select(self, n, prompt_type) -> list[Function]:
+        """
+        选择 n 个父代节点。
+        包含重试机制，防止多线程同时选中完全相同的父代组合。
+        """
+        max_retries = 10  # 最大重试次数，防止死循环
+        retry_count = 0
+
         with self._lock:
-            try:
-                tabu_dict = self._tabu_dict[prompt_type]
+            while retry_count < max_retries:
+                try:
+                    selected_nodes = self._select_logic(n, prompt_type)
 
-                # --- Step 1: 准备三个互斥的候选池 ---
-                # 获取所有非Tabu的节点
-                non_tabu_nodes = [
-                    node for node in self._nodes_by_index.values()
-                    if node._ID not in tabu_dict
-                ]
+                    # 如果没有选出节点，直接返回空
+                    if not selected_nodes:
+                        return []
 
-                # Tier 1: Leaf & Non-Tabu (最高优先级)
-                # 假设 leaf_nodes 里的节点一定也在 nodes_by_index 里
-                tier1_leaves = [node for node in self._leaf_nodes if node._ID not in tabu_dict]
-                tier1_ids = {node._ID for node in tier1_leaves}
+                    # 生成唯一Key: 对ID进行排序，保证 (A, B) 和 (B, A) 视为同一个组合
+                    # 只有当 n > 0 时才检查
+                    key = tuple(sorted([node._ID for node in selected_nodes]))
 
-                # Tier 2: Non-Leaf & Non-Tabu (次优先级)
-                tier2_internal = [node for node in non_tabu_nodes if node._ID not in tier1_ids]
-
-                # Tier 3: Tabu Nodes (最低优先级，兜底)
-                tier3_tabu = [
-                    node for node in self._nodes_by_index.values()
-                    if node._ID in tabu_dict
-                ]
-
-                # 放入列表，按优先级排序
-                candidate_tiers = [tier1_leaves, tier2_internal, tier3_tabu]
-
-                selected_nodes = []
-
-                # --- Step 2: 级联选择逻辑 ---
-                for pool in candidate_tiers:
-                    needed = n - len(selected_nodes)
-                    if needed <= 0:
-                        break  # 已经选够了
-
-                    if not pool:
-                        continue  # 当前层级为空，跳过
-
-                    if len(pool) <= needed:
-                        # 情况 A: 当前层级不够或刚好填满需求 -> 全选
-                        selected_nodes.extend(pool)
+                    # 检查是否正在被处理
+                    if key in self._processing_parents:
+                        # 冲突：当前组合正在被另一个线程使用，重试
+                        retry_count += 1
+                        continue
                     else:
-                        # 情况 B: 当前层级充裕 -> 基于 Score 进行加权随机采样 (填满剩余 needed)
-                        selected_subset = self._weighted_sample(pool, needed)
-                        selected_nodes.extend(selected_subset)
-                        break  # 选够了，结束
+                        # 未冲突：锁定该组合
+                        self._processing_parents.add(key)
+                        return [node._func for node in selected_nodes]
 
-                # 返回对应的 Function 对象
-                return [node._func for node in selected_nodes]
+                except Exception as e:
+                    print_error(f'TreePopulation.select: {type(e).__name__}: {e}')
+                    return []
 
-            except Exception as e:
-                print_error(f'TreePopulation.select: {type(e).__name__}: {e}')
-                # 这里的 fallback 可以根据情况决定是否需要 return 空列表
-                return []
+            # 如果重试次数耗尽，仍然只采样到了被锁定的节点
+            # 策略：允许重复（兜底），避免程序挂起或返回空
+            # 这种情况通常发生在种群很小且高性能节点很少时
+            return [node._func for node in selected_nodes]
+
+    def _select_logic(self, n, prompt_type) -> list[TreeNode]:
+        """
+        内部选择逻辑（不包含锁检查），原 select 的核心逻辑。
+        """
+        tabu_dict = self._tabu_dict[prompt_type]
+
+        # --- Step 1: 准备三个互斥的候选池 ---
+        # 获取所有非Tabu的节点
+        non_tabu_nodes = [
+            node for node in self._nodes_by_index.values()
+            if node._ID not in tabu_dict
+        ]
+
+        # Tier 1: Leaf & Non-Tabu (最高优先级)
+        # 假设 leaf_nodes 里的节点一定也在 nodes_by_index 里
+        tier1_leaves = [node for node in self._leaf_nodes if node._ID not in tabu_dict]
+        tier1_ids = {node._ID for node in tier1_leaves}
+
+        # Tier 2: Non-Leaf & Non-Tabu (次优先级)
+        tier2_internal = [node for node in non_tabu_nodes if node._ID not in tier1_ids]
+
+        # Tier 3: Tabu Nodes (最低优先级，兜底)
+        tier3_tabu = [
+            node for node in self._nodes_by_index.values()
+            if node._ID in tabu_dict
+        ]
+
+        # 放入列表，按优先级排序
+        candidate_tiers = [tier1_leaves, tier2_internal, tier3_tabu]
+
+        selected_nodes = []
+
+        # --- Step 2: 级联选择逻辑 ---
+        for pool in candidate_tiers:
+            needed = n - len(selected_nodes)
+            if needed <= 0:
+                break  # 已经选够了
+
+            if not pool:
+                continue  # 当前层级为空，跳过
+
+            if len(pool) <= needed:
+                # 情况 A: 当前层级不够或刚好填满需求 -> 全选
+                selected_nodes.extend(pool)
+            else:
+                # 情况 B: 当前层级充裕 -> 基于 Score 进行加权随机采样 (填满剩余 needed)
+                selected_subset = self._weighted_sample(pool, needed)
+                selected_nodes.extend(selected_subset)
+                break  # 选够了，结束
+
+        return selected_nodes
+
+    def release_parents(self, parents: list[Function]):
+        """
+        释放被锁定的父代组合。
+        必须在 TreeEoH 中调用 (最好在 finally 块中)。
+        """
+        if not parents:
+            return
+
+        with self._lock:
+            # 重建 Key
+            key = tuple(sorted([func.ID for func in parents]))
+            if key in self._processing_parents:
+                self._processing_parents.remove(key)
 
     def _weighted_sample(self, node_list, k):
         """
-        辅助函数：根据 _func.score 进行加权无放回采样。
-        使用了 Softmax 思想将 score 转化为概率，处理负数 score 的情况。
+        辅助函数：基于排名的加权无放回采样 (Linear Rank-Based Selection)。
+        解决了原始 Softmax 在分数差异巨大（如 -5000 vs -10）时，
+        导致低分个体选中概率为 0 的问题。
         """
         if k == 0:
             return []
 
+        # 如果需要的数量大于等于列表长度，直接全选
+        if k >= len(node_list):
+            return node_list
+
         scores = np.array([node._func.score for node in node_list])
 
-        # 策略：使用 Softmax 将分数转换为概率分布
-        # 1. 减去最大值防止 exp 溢出 (数值稳定性)
-        exp_scores = np.exp(scores - np.max(scores))
-        probs = exp_scores / np.sum(exp_scores)
+        # --- 修改开始: 使用排名代替原始分数 ---
 
-        # 2. 使用 numpy 进行加权无放回采样
-        # replace=False 表示无放回
+        # 1. 获取排名 (从小到大，0 表示分数最低，N-1 表示分数最高)
+        # argsort 调用两次可以得到每个元素的排名索引
+        ranks = np.argsort(np.argsort(scores))
+
+        # 2. 计算权重：使用线性排名
+        # 最差的个体权重为 1，最好的个体权重为 N + Alpha
+        # 这种方式保证了最差个体也有 1/Sum 的概率被选中
+        # 你可以通过调整 base_weight 来调节“贫富差距”，base 越大，选择越均匀
+        base_weight = 1.0
+        weights = ranks + base_weight
+
+        # 3. 归一化为概率
+        probs = weights / np.sum(weights)
+
+        # --- 修改结束 ---
+
+        # 使用 numpy 进行加权无放回采样
         selected = np.random.choice(node_list, size=k, replace=False, p=probs)
         return list(selected)
-
-    # def select(self, n, prompt_type) -> Function | list[Function]:
-    #     with self._lock:
-    #         try:
-    #             # step 1: if there are leaf nodes not in tabu, select the ones with minimum level
-    #             tabu_dict = self._tabu_dict[prompt_type]
-    #             leaf_list = [node for node in self._leaf_nodes if node._ID not in tabu_dict]
-    #
-    #             if len(leaf_list) >= n:
-    #                 min_level_nodes = sorted(leaf_list, key=lambda x: x._level)[:n]
-    #                 return [x._func for x in min_level_nodes]
-    #
-    #             # step 2: if there are non-leaf nodes not in tabu, select from all nodes not in tabu
-    #             node_list = [node for node in self._nodes_by_index.values() if node._ID not in tabu_dict]
-    #             if len(node_list) >= n:
-    #                 min_nodes = sorted(node_list, key=lambda x: x._level)[:n]
-    #                 return [x._func for x in min_nodes]
-    #
-    #             # step 3: otherwise, select the best available node
-    #             else:
-    #                 func = sorted(node_list, key=lambda x: x._func.score, reverse=True)
-    #                 p = [1 / (r + len(func)) for r in range(len(func))]
-    #                 p = np.array(p)
-    #                 p = p / np.sum(p)
-    #                 return np.random.choice(func, p=p)
-    #         except Exception as e:
-    #             print_error(f'TreePopulation.select: {type(e).__name__}: {e}')
-    #             print(self._nodes_by_id.keys())
-
 
     def feedback(self, parents: List[str], prompt_type: str):
         if parents in [None, [], [None]]:
@@ -295,38 +335,3 @@ class TreePopulation:
                 parent_node = self._nodes_by_id[parent_id]
                 if parent_node._ID not in self._tabu_dict[prompt_type]:
                     self._tabu_dict[prompt_type][parent_node._ID] = 0
-
-# class SelectionPriorityQueue:
-#     def __init__(self, priority_func):
-#         self._heap = []
-#         self._counter = itertools.count()
-#         self.priority_func = priority_func
-#         self._lock = threading.Lock()
-#
-#     def push(self, item):
-#         with self._lock:
-#             priority = self.priority_func(item)
-#             count = next(self._counter)
-#             heapq.heappush(self._heap, (priority, count, item))
-#
-#     def pop(self):
-#         if not self._heap:
-#             raise IndexError("pop from an empty priority queue")
-#
-#         with self._lock:
-#             priority, count, item = heapq.heappop(self._heap)
-#         return item
-#
-#     def peek(self):
-#         if not self._heap:
-#             raise None
-#
-#         with self._lock:
-#             priority, count, item = self._heap[0]
-#         return item
-#
-#     def __len__(self):
-#         return len(self._heap)
-#
-#     def is_empty(self):
-#         return len(self._heap) == 0
