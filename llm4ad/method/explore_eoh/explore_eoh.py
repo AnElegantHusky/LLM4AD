@@ -194,15 +194,23 @@ class ExploreEoH:
         # program = self._evaluator._modify_program_code(program)
 
         # obtain and check ID   # Step 1.1 获取并检查ID
-        ID = self._evaluation_executor.submit(
-            self._evaluator.evaluate_ID,
-            program
-        ).result()
-        func.ID = ID  # Step 1.2: 记录ID
+        # ID = self._evaluation_executor.submit(
+        #     self._evaluator.evaluate_ID,
+        #     program
+        # ).result()
+        # func.ID = ID  # Step 1.2: 记录ID
         func.algorithm = thought
         func.sample_time = sample_time
         func.score = -float('inf')
 
+        # evaluate
+        res, eval_time = self._evaluation_executor.submit(
+            self._evaluator.evaluate_program_record_time,
+            program
+        ).result()
+
+        func.ID = res.get('id', None)
+        func.fitness_vector = res.get('fitness_vector', None)
         if self._population.if_ID_duplicate(func.ID):   # Step 1.3: 先检查ID是否重复，再evaluate
             print_success(f'Success: Duplicate ID {func.ID} found, ')
             with self._duplicate_lock:
@@ -212,15 +220,8 @@ class ExploreEoH:
                     self._duplicate_count += 1
                 self._profiler.register_function(func, program=str(program))
             return
+        func.score = res.get('fitness_scalar', None)
 
-        # evaluate
-        res, eval_time = self._evaluation_executor.submit(
-            self._evaluator.evaluate_program_record_time,
-            program
-        ).result()
-
-        # register to profiler
-        func.score = res
         func.evaluate_time = eval_time
 
         if self._profiler is not None:

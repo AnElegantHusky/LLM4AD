@@ -55,7 +55,8 @@ class AtomicProfiler(ProfilerBase):
                     'algorithm': f.algorithm,
                     'function': str(f),
                     'score': f.score,
-                    'ID': f.ID      # Step 1.5 保存ID
+                    'ID': f.ID,      # Step 1.5 保存ID
+                    'fitness_vector': str(f.fitness_vector)
                 }
                 funcs_json.append(f_json)
             path = os.path.join(self._ckpt_dir, f'pop_{pop.generation}.json')

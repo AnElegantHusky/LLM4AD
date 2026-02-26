@@ -182,20 +182,26 @@ class EoH:
         if program is None:
             return
 
-        if hasattr(self._evaluator, 'evaluate_ID'):
-            ID = self._evaluation_executor.submit(
-                self._evaluator.evaluate_ID,
-                program
-            ).result()
-            func.ID = ID
-
         # evaluate
-        score, eval_time = self._evaluation_executor.submit(
+        res, eval_time = self._evaluation_executor.submit(
             self._evaluator.evaluate_program_record_time,
             program
         ).result()
         # register to profiler
-        func.score = score
+        if isinstance(res, dict):
+            func.score = res.get('fitness_scalar', None)
+            func.ID = res.get('id', None)
+            func.fitness_vector = res.get('fitness_vector', None)
+        else:
+            func.score = res
+            func.fitness_vector = [res]
+            if hasattr(self._evaluator, 'evaluate_ID'):
+                ID = self._evaluation_executor.submit(
+                    self._evaluator.evaluate_ID,
+                    program
+                ).result()
+                func.ID = ID
+
         func.evaluate_time = eval_time
         func.algorithm = thought
         func.sample_time = sample_time

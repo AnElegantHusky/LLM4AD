@@ -82,6 +82,7 @@ class TreeProfiler(ProfilerBase):
             'thought': function.thought,  # Added when recording
             'function': str(function),
             'score': function.score,
+            'fitness_vector': str(function.fitness_vector),
             'ID': function.ID,  # Step 1.5 保存ID
             'parents': function.parents,
             'prompt_type': function.prompt_type,

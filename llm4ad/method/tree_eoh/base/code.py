@@ -67,6 +67,7 @@ class Function:
     docstring: str | None = None
     score: Any | None = None
     ID: str | None = None
+    fitness_vector: list[float] | None = None
     evaluate_time: float | None = None
     sample_time: float | None = None
     parents: list[str] | None = None

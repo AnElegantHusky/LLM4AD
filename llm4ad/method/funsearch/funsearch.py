@@ -146,11 +146,11 @@ class FunSearch:
                     futures.append(future)
                 # get evaluate scores and evaluate times
                 scores_times = [f.result() for f in futures]
-                scores, times = [i[0] for i in scores_times], [i[1] for i in scores_times]
+                res, times = [i[0] for i in scores_times], [i[1] for i in scores_times]
 
                 # register to program database and profiler
                 island_id = prompt.island_id
-                for program, score, eval_time in zip(programs_to_be_eval, scores, times):
+                for program, res_dict, eval_time in zip(programs_to_be_eval, res, times):
                     # update
                     self._tot_sample_nums += 1
                     # convert to Function instance
@@ -159,19 +159,23 @@ class FunSearch:
                     if function is None:
                         continue
                     # register to program database
+
+                    score = res_dict.get('fitness_scalar', None) if isinstance(res_dict, dict) else res_dict
+                    id = res_dict.get('id', None) if isinstance(res_dict, dict) else None
+                    if 'id' not in res_dict and hasattr(self._evaluator, 'evaluate_ID'):
+                        id = self._evaluation_executor.submit(
+                            self._evaluator.evaluate_ID,
+                            program
+                        ).result()
+                    function.ID = id
+                    function.fitness_vector = res_dict.get('fitness_vector', None) if isinstance(res_dict, dict) else [score]
+
                     if score is not None:
                         self._database.register_function(
                             function=function,
                             island_id=island_id,
                             score=score
                         )
-
-                    if hasattr(self._evaluator, 'evaluate_ID'):
-                        ID = self._evaluation_executor.submit(
-                            self._evaluator.evaluate_ID,
-                            program
-                        ).result()
-                        function.ID = ID
 
                         # register to profiler
                     if self._profiler is not None:

@@ -177,22 +177,30 @@ class TreeEoH:
         if program is None:
             return
 
-        # program = self._evaluator._modify_program_code(program)
-        # obtain and check ID
-        ID = self._evaluation_executor.submit(
-            self._evaluator.evaluate_ID,
+        # evaluate
+        res, eval_time = self._evaluation_executor.submit(
+            self._evaluator.evaluate_program_record_time,
             program
         ).result()
+
+        ID = res.get('id', None) if isinstance(res, dict) else None
+        if 'id' not in res:
+            ID = self._evaluation_executor.submit(
+                self._evaluator.evaluate_ID,
+                program
+            ).result()
         func.ID = ID
         func.thought = thought
+        func.fitness_vector = res.get('fitness_vector', None) if isinstance(res, dict) else None
 
-        func.score = -float('inf')
+        func.score = res.get('fitness_scalar', None) if isinstance(res, dict) else res
 
         # process the first infeasible case
         if func.ID is None:
             # if prompt_type != 'I1':
             with self._duplicate_lock:
                 self._infeasible_count += 1
+            func.score = -float('inf')
             self._profiler.register_function(func, program=str(program))
             return
         elif self._population.if_ID_duplicate(func.ID):
@@ -200,18 +208,12 @@ class TreeEoH:
             with self._duplicate_lock:
                 self._duplicate_count += 1
                 self._population.feedback(parents, prompt_type)
+            func.score = -float('inf')
             self._profiler.register_function(func, program=str(program))
             return
 
-        # evaluate
-        res, eval_time = self._evaluation_executor.submit(
-            self._evaluator.evaluate_program_record_time,
-            program
-        ).result()
-
         # register to profiler
         # with self._duplicate_lock:
-        func.score = res
         func.evaluate_time = eval_time
 
         self._profiler.register_function(func, program=str(program))
@@ -390,15 +392,15 @@ class TreeEoH:
         func = self._function_to_evolve
         program = self._template_program
 
-        # obtain and check ID
-        ID = self._evaluator.evaluate_ID(program)
+        # evaluate
+        res = self._evaluator.evaluate_program(program)
+        scores = res.get('fitness_scalar', None) if isinstance(res, dict) else res
+        func.score = scores
+
+        ID = res.get('id', None) if isinstance(res, dict) else None
         func.ID = ID
 
-        # evaluate
-        scores = self._evaluator.evaluate_program(program)
-
         # register to profiler
-        func.score = scores
         func.thought = "Template Program"
         if self._profiler is not None:
             self._profiler.register_function(func, program=str(program))

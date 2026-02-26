@@ -273,7 +273,12 @@ class InitDebug:
                 )
 
                 # get evaluate scores and evaluate times
-                score, eval_time = future.result()
+                res, eval_time = future.result()
+
+                if isinstance(res, dict) and 'fitness_scalar' in res:
+                    score = res['fitness_scalar']
+                else:
+                    score = res
 
                 # convert to Function instance
                 function = TextFunctionProgramConverter.program_to_function(program_to_be_eval)
@@ -316,14 +321,14 @@ class InitDebug:
             self._init()
 
         # start sampling using multiple threads
-        for t in self._sampler_threads:
-            t.start()
-
-        # join all threads to the main thread
-        for t in self._sampler_threads:
-            t.join()
-
-        if self._profiler is not None:
-            self._profiler.finish()
-
-        self._sampler.llm.close()
+        # for t in self._sampler_threads:
+        #     t.start()
+        #
+        # # join all threads to the main thread
+        # for t in self._sampler_threads:
+        #     t.join()
+        #
+        # if self._profiler is not None:
+        #     self._profiler.finish()
+        #
+        # self._sampler.llm.close()

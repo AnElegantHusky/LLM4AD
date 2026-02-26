@@ -181,22 +181,26 @@ class MCTS_AHD:
         if program is None:
             return False
         # evaluate
-        score, eval_time = self._evaluation_executor.submit(
+        res, eval_time = self._evaluation_executor.submit(
             self._evaluator.evaluate_program_record_time,
             program
         ).result()
         # register to profiler
+
+        score = res.get('fitness_scalar', None) if isinstance(res, dict) else res
+        id = res.get('id', None) if isinstance(res, dict) else None
+        if 'id' not in res and hasattr(self._evaluator, 'evaluate_ID'):
+            id = self._evaluation_executor.submit(
+                self._evaluator.evaluate_ID,
+                program
+            ).result()
+        func.ID = id
+        func.fitness_vector = res.get('fitness_vector', None) if isinstance(res, dict) else None
+
         func.score = score
         func.evaluate_time = eval_time
         func.algorithm = thought
         func.sample_time = sample_time
-
-        if hasattr(self._evaluator, 'evaluate_ID'):
-            ID = self._evaluation_executor.submit(
-                self._evaluator.evaluate_ID,
-                program
-            ).result()
-            func.ID = ID
 
         if self._profiler is not None:
             self._profiler.register_function(func, program=str(program))

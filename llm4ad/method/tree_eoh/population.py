@@ -17,6 +17,7 @@ from .base.print_utils import print_error
 class TreeNode():
     def __init__(self, sample_order, func, level):
         self._ID = func.ID
+        self._fitness_vector = func.fitness_vector
         self._sample_order = sample_order
         self._func: Function = func
 

@@ -84,6 +84,7 @@ class MAProfiler(ProfilerBase):
             'function': str(function),
             'score': function.score,
             'ID': function.ID,
+            'fitness_vector': function.fitness_vector,
             'program': program,
         }
 
